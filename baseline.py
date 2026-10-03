@@ -31,8 +31,6 @@ class BaselineSpellChecker:
         words = sentence.split()
         corrected_words = []
         for i, word in enumerate(words):
-            # Nếu từ không nằm trong từ điển và chỉ chứa chữ cái
-            # thì xem như từ có khả năng bị lỗi.
             if word.lower() not in self.lm.vocab and word.isalpha():
                 candidates = generate_candidates_fast(
                     word.lower(),

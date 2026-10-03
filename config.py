@@ -9,6 +9,7 @@ GENERATED_DATA_DIR= "data/generated"
 RAW_DATA_FILE="data/raw/dataset.csv"
 PROCESSED_DATA_FILE="data/processed/processed_data.csv"
 GENERATED_DATA_FILE="data/generated/error_dataset.csv"
+CONFUSION_SET = r"C:\Users\ADMIN\Downloads\NLP\confusion_set.txt"
 
 ERROR_TYPES = [
     # Lỗi ký tự
