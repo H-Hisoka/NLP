@@ -1,29 +1,28 @@
 import argparse
 import difflib
-import re
+import os
 from pathlib import Path
  
 import pandas as pd
  
-from config import GENERATED_DATA_FILE, PROCESSED_DATA_FILE, ERROR_TYPES, TOP_K, RANDOM_SEED
+from config import GENERATED_DATA_FILE, TOP_K, RANDOM_SEED
 from evaluation import evaluate_system
+from preprocessing import normalize_text
 import suggest as S
  
-SRC_COLS = ["error_sentence", "noisy_sentence", "wrong_sentence", "incorrect_sentence", "erroneous_sentence",
-            "source", "input", "error_text", "sentence_with_error"]
-GOLD_COLS = ["correct_sentence", "original_sentence", "target", "clean_sentence", "ground_truth", "gold",
-             "label", "original", "sentence"]
-TYPE_COLS = ["error_type", "error_types", "type", "types", "errors", "error"]
+SRC_COLS = ["error_text", "error_sentence", "noisy_sentence", "wrong_sentence", "incorrect_sentence", "source",
+            "input"]
+GOLD_COLS = ["correct_text", "correct_sentence", "original_sentence", "target", "clean_sentence", "ground_truth",
+             "gold", "sentence"]
+TYPE_COLS = ["error_type", "error_types", "type", "types"]
  
+OTHER = "Khác (thiếu/thừa/đảo từ, hoa-thường, dấu câu, ký hiệu)"
 GROUPS = ["Sai dấu", "Sai ký tự", "Lỗi tách từ", "Từ riêng", "Từ chuyên ngành", "Real-word error",
-          "Sửa nhầm từ vốn đã đúng", "Khác (thiếu/thừa/đảo từ)"]
+          "Sửa nhầm từ vốn đã đúng", OTHER]
 SYSTEM_NAMES = {"baseline": "Baseline", "improved": "Cải tiến"}
  
-_TYPE_RE = re.compile(r"(?<![A-Za-z_])(" + "|".join(sorted(map(re.escape, ERROR_TYPES), key=len, reverse=True))
-                      + r")(?![A-Za-z_])")
  
- 
-# đọc dữ liệu
+#  đọc dữ liệu
 def find_col(df, given, candidates, what, flag):
     lower = {c.lower(): c for c in df.columns}
     if given:
@@ -37,18 +36,13 @@ def find_col(df, given, candidates, what, flag):
                      f"Hãy chỉ định bằng {flag} <tên cột>.")
  
  
-def parse_types(value):
-    """Lấy các loại lỗi trong ERROR_TYPES xuất hiện trong ô (chịu mọi định dạng: 'a|b', 'a,b', "['a','b']"...)."""
-    return list(dict.fromkeys(_TYPE_RE.findall(str(value))))
- 
- 
 def read_terms(path):
     if not path:
         return set()
     return {l.strip().lower() for l in open(path, encoding="utf-8") if l.strip()}
  
  
-# căn chỉnh lỗi chuẩn (gold)
+#  căn chỉnh lỗi chuẩn 
 def gold_units(src, gold):
     """
     So hai danh sách từ, trả về các 'đơn vị lỗi chuẩn':
@@ -71,26 +65,28 @@ def gold_units(src, gold):
  
  
 def classify_error(u, kind, vocab, tech, proper):
-    """Nhóm của một lỗi: tách từ > từ riêng > chuyên ngành > real-word > sai dấu > sai ký tự."""
+    """Nhóm của một lỗi: tách từ > hoa-thường/dấu câu > từ riêng > chuyên ngành > real-word > sai dấu > sai ký tự."""
     if kind == "Sửa nhầm từ đúng":
         return "Sửa nhầm từ vốn đã đúng"
     src_w, gold_w = u["src"], u["gold"]
     if not u["fixable"]:
         if src_w.replace(" ", "").lower() == gold_w.replace(" ", "").lower():
             return "Lỗi tách từ"
-        return "Khác (thiếu/thừa/đảo từ)"
+        return OTHER
+    if normalize_text(src_w) == normalize_text(gold_w):       # chỉ khác hoa/thường hoặc dấu câu
+        return OTHER
     if (gold_w[:1].isupper() and u["j"] > 0) or gold_w.lower() in proper:
         return "Từ riêng"
     if gold_w.lower() in tech:
         return "Từ chuyên ngành"
-    if src_w.lower() in vocab:
+    if S.split_core(src_w)[1].lower() in vocab:
         return "Real-word error"
     if S.strip_marks(src_w.lower()) == S.strip_marks(gold_w.lower()):
         return "Sai dấu"
     return "Sai ký tự"
  
  
-#  chạy một hệ thống
+# chạy một hệ thống
 def run_system(name, checker, rows, top_k, tech, proper):
     vocab = checker.lm.vocab
     preds, top3s, golds = [], [], []
@@ -120,54 +116,53 @@ def run_system(name, checker, rows, top_k, tech, proper):
             n_det += detected; n_top1 += top1; n_top3 += top3_hit
             if not top1:
                 kind = "Bỏ sót" if not detected else "Sửa sai"
-                shown = cl[0] if cl else "—"
                 cases.append({"Hệ thống": name, "Kiểu lỗi mô hình": kind,
                               "Nhóm lỗi": classify_error(u, kind, vocab, tech, proper),
-                              "Loại lỗi (config)": "|".join(r["types"]), "Câu nguồn": r["source"],
-                              "Từ lỗi": u["src"], "Đáp án": u["gold"], "Mô hình đề xuất": shown})
+                              "Loại lỗi (dữ liệu)": r["type"], "Câu nguồn": r["source"],
+                              "Từ lỗi": u["src"], "Đáp án": u["gold"], "Mô hình đề xuất": cl[0] if cl else "—"})
         for k, e in by_idx.items():                       # hệ thống đánh dấu một từ vốn đúng
             if k not in err_idx:
                 FP += 1
                 cases.append({"Hệ thống": name, "Kiểu lỗi mô hình": "Sửa nhầm từ đúng",
-                              "Nhóm lỗi": "Sửa nhầm từ vốn đã đúng", "Loại lỗi (config)": "|".join(r["types"]),
+                              "Nhóm lỗi": "Sửa nhầm từ vốn đã đúng", "Loại lỗi (dữ liệu)": r["type"],
                               "Câu nguồn": r["source"], "Từ lỗi": e["original"], "Đáp án": e["original"],
                               "Mô hình đề xuất": e["candidates"][0][0] if e["candidates"] else "—"})
-        sent_rows.append({"types": r["types"], "n_units": len(units), "det": n_det, "top1": n_top1,
-                          "top3": n_top3, "exact": pred == r["gold"]})
+        sent_rows.append({"type": r["type"], "n_units": len(units), "det": n_det, "top1": n_top1,
+                          "top3": n_top3, "exact": pred == r["gold"], "unchanged": not units})
     overall = evaluate_system(preds, golds, top3s, TP, FP, FN)
     return overall, pd.DataFrame(sent_rows), pd.DataFrame(cases)
  
  
-def table_by_type(sent_df):
+def table_by_type(sent_df, types):
     rows = []
-    for t in ERROR_TYPES:
-        sub = sent_df[sent_df["types"].apply(lambda ts: t in ts)]
-        clean = sub[(sub["types"].apply(len) == 1) & (sub["n_units"] == 1)]
+    for t in types:
+        sub = sent_df[sent_df["type"] == t]
         nu = sub["n_units"].sum()
         rows.append({
             "error_type": t,
             "số_câu": len(sub),
             "số_từ_lỗi": int(nu),
+            "câu_không_đổi": sub["unchanged"].mean() if len(sub) else float("nan"),
             "phát_hiện": sub["det"].sum() / nu if nu else float("nan"),
             "top1": sub["top1"].sum() / nu if nu else float("nan"),
             "top3": sub["top3"].sum() / nu if nu else float("nan"),
             "exact_match_câu": sub["exact"].mean() if len(sub) else float("nan"),
-            "số_câu_1_lỗi": len(clean),
-            "top1_câu_1_lỗi": clean["top1"].mean() if len(clean) else float("nan"),
         })
     return pd.DataFrame(rows).set_index("error_type")
  
  
-# ------------------------------------------------------------------------------------ main
+#  main
 def main():
+    default_data = GENERATED_DATA_FILE if os.path.exists(GENERATED_DATA_FILE) else "dulieu_loi.csv"
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default=GENERATED_DATA_FILE, help="file lỗi sinh ra (CSV)")
-    ap.add_argument("--train-file", default=PROCESSED_DATA_FILE, help="câu đúng để huấn luyện mô hình ngôn ngữ")
+    ap.add_argument("--data", default=default_data, help="file lỗi sinh ra (CSV)")
+    ap.add_argument("--train-file", default=None,
+                    help="câu đúng để huấn luyện mô hình ngôn ngữ (mặc định: PROCESSED_DATA_FILE hoặc dulieu.csv)")
     ap.add_argument("--train-col", default=None)
     ap.add_argument("--src-col", default=None, help="cột câu có lỗi")
     ap.add_argument("--gold-col", default=None, help="cột câu đúng")
     ap.add_argument("--type-col", default=None, help="cột loại lỗi")
-    ap.add_argument("--limit", type=int, default=0, help="chỉ đánh giá ngẫu nhiên N câu (0 = tất cả)")
+    ap.add_argument("--per-type", type=int, default=100, help="số câu lấy ngẫu nhiên cho MỖI loại lỗi (0 = tất cả)")
     ap.add_argument("--no-holdout", action="store_true",
                     help="KHÔNG loại câu đánh giá khỏi dữ liệu huấn luyện LM (mặc định có loại để tránh rò rỉ)")
     ap.add_argument("--systems", nargs="+", default=["baseline", "improved"], choices=list(SYSTEM_NAMES))
@@ -176,19 +171,19 @@ def main():
     ap.add_argument("--out", default="data/analysis")
     args = ap.parse_args()
  
-    df = pd.read_csv(args.data)
+    df = pd.read_csv(args.data, encoding="utf-8-sig")
     sc = find_col(df, args.src_col, SRC_COLS, "câu có lỗi", "--src-col")
     gc = find_col(df, args.gold_col, GOLD_COLS, "câu đúng", "--gold-col")
     tc = find_col(df, args.type_col, TYPE_COLS, "loại lỗi", "--type-col")
-    df = df.dropna(subset=[sc, gc])
-    if args.limit and len(df) > args.limit:
-        df = df.sample(args.limit, random_state=RANDOM_SEED)
-    rows = [{"source": S.nfc(str(a)), "gold": S.nfc(str(b)), "types": parse_types(t)}
+    df = df.dropna(subset=[gc, tc]).copy()
+    df[sc] = df[sc].fillna("")
+    types = list(dict.fromkeys(df[tc].astype(str)))              # giữ thứ tự xuất hiện trong dữ liệu
+    if args.per_type:
+        df = pd.concat([g.sample(min(len(g), args.per_type), random_state=RANDOM_SEED)
+                        for _, g in df.groupby(tc, sort=False)])
+    rows = [{"source": S.nfc(str(a)), "gold": S.nfc(str(b)), "type": str(t)}
             for a, b, t in zip(df[sc], df[gc], df[tc])]
-    print(f"Đánh giá {len(rows)} câu | cột: nguồn='{sc}', đúng='{gc}', loại lỗi='{tc}'")
-    untyped = sum(1 for r in rows if not r["types"])
-    if untyped:
-        print(f"  Cảnh báo: {untyped} câu không có loại lỗi nào khớp ERROR_TYPES (vẫn tính vào chỉ số tổng thể).")
+    print(f"Đánh giá {len(rows)} câu, {len(types)} loại lỗi | cột: nguồn='{sc}', đúng='{gc}', loại lỗi='{tc}'")
  
     exclude = None if args.no_holdout else {r["gold"] for r in rows}
     lm, n_train = S.load_language_model(args.train_file, args.train_col, exclude)
@@ -203,7 +198,7 @@ def main():
         name = SYSTEM_NAMES[key]
         print(f"\nĐang chạy {name} ...")
         overall[name], sent_df, cases = run_system(name, checkers[key], rows, TOP_K, tech, proper)
-        per_type[name] = table_by_type(sent_df)
+        per_type[name] = table_by_type(sent_df, types)
         all_cases.append(cases)
  
     overall_df = pd.DataFrame(overall).T
@@ -213,9 +208,14 @@ def main():
  
     by_type = pd.concat(per_type, axis=1)
     by_type.to_csv(out / "metrics_by_error_type.csv", encoding="utf-8-sig")
-    print("\n=== Theo 30 loại lỗi (ERROR_TYPES) ===")
-    pd.set_option("display.width", 200); pd.set_option("display.max_columns", 30)
+    pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
+    print("\n=== Theo từng loại lỗi (phát_hiện/top1/top3 tính trên từ lỗi; câu_không_đổi = câu lỗi giống câu đúng) ===")
     print(by_type.round(3).to_string())
+    first = per_type[SYSTEM_NAMES[args.systems[0]]]
+    no_change = [t for t in types if first.loc[t, "câu_không_đổi"] >= 0.95]
+    if no_change:
+        print("\nCẢNH BÁO: các loại lỗi sau gần như không làm câu thay đổi (≥95% câu lỗi giống hệt câu đúng "
+              "khi so từng từ) -> nên kiểm tra lại hàm sinh lỗi tương ứng:\n  " + ", ".join(no_change))
  
     cases = pd.concat(all_cases, ignore_index=True)
     cases.to_csv(out / "error_cases.csv", index=False, encoding="utf-8-sig")
@@ -225,7 +225,7 @@ def main():
     summary.to_csv(out / "summary_by_group.csv", encoding="utf-8-sig")
     print(f"\n=== Phân loại lỗi của mô hình theo nhóm (tổng {len(cases)} lỗi; đề yêu cầu >= 30) ===")
     print(summary.to_string())
-    print("ĐẠT yêu cầu >= 30 lỗi" if len(cases) >= 30 else "CHƯA ĐỦ 30 lỗi: hãy tăng --limit hoặc dùng thêm dữ liệu")
+    print("ĐẠT yêu cầu >= 30 lỗi" if len(cases) >= 30 else "CHƯA ĐỦ 30 lỗi: hãy tăng --per-type")
  
     try:
         import matplotlib
