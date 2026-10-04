@@ -33,3 +33,29 @@ DANH_SACH_LOI = [
     "url_error",
     "email_error"
 ]
+
+EMOIJI_LIST = [
+    "😂", "😢", "😡", "❤️", "😱"
+]
+
+TEENCODE_REPLACEMENTS = {
+    "không": "ko",
+    "mình": "mk",
+    "bạn": "bn",
+    "được": "dc",
+    "gì": "j",
+    "vậy": "z",
+    "rồi": "r",
+    "biết": "bít"
+}
+
+ABBREVIATION_REPLACEMENTS = {
+    "không": "ko",
+    "và": "&",
+    "được": "đc",
+    "với": "vs"
+}   
+
+PUNCTUATION=[
+    
+]

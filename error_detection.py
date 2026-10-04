@@ -44,7 +44,7 @@ def damerau_levenshtein(a: str, b: str, return_matrix=False):
     return dp[n][m]
 
 def detect_errors(a: str, b: str):
-    dist, dp = levenshtein(a, b, return_matrix=True)
+    dist, dp = damerau_levenshtein(a, b, return_matrix=True)
     if dist == 0:
         return {
             "has_error": False,
