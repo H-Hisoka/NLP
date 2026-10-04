@@ -175,7 +175,14 @@ def tao_loi(text, loai_loi):
 
     # 21. Emoji sai
     elif loai_loi == "wrong_emoji":
-        return text + " 😂"
+        emojis = ["😂", "😢", "😡", "❤️", "😱"]
+
+        for emoji in emojis:
+            if emoji in text:
+                wrong_emoji = random.choice(
+                    [e for e in emojis if e != emoji]
+                )
+                return text.replace(emoji, wrong_emoji, 1)
 
     # 22. Thiếu emoji
     elif loai_loi == "missing_emoji":
@@ -224,7 +231,20 @@ def tao_loi(text, loai_loi):
 
     # 26. Code switching
     elif loai_loi == "code_switching":
-        return text + " very good"
+        words = text.split()
+        if len(words) >= 2:
+            pos = random.randint(1, len(words) - 1)
+            words.insert(pos, random.choice([
+                "very good",
+                "awesome",
+                "cool",
+                "nice",
+                "okay"
+            ]))
+    
+            return " ".join(words)
+    
+        return text
 
     # 27. Lỗi Unicode
     elif loai_loi == "unicode_error":
