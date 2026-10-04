@@ -15,13 +15,15 @@ git checkout main
 git pull origin main
 git checkout <nhánh phụ>
 git merge main
-để push code cua minh len
+
+# để push code cua minh len
 dang o nhanh phu
 git add (dung folder)
 git commit -m "comment gi do"
 git push -u origin (ten nhanh phu) (lan dau)
 git push (lan sau)
-lan dau mang code ve
+
+# lan dau mang code ve
 tao folder chua
 nhay vao folder
 git clone (url github)
