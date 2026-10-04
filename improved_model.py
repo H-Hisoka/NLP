@@ -28,6 +28,7 @@ class ImproveSpellChecker:
     def __init__(self, lm_model: NGramLanguageModel, confusion_path=CONFUSION_SET):
         self.lm = lm_model
         self.confusion_dict = load_confusion_dict(confusion_path)   # đọc file một lần duy nhất
+        self._cand_cache = {}                                        # nhớ ứng viên theo từ (tính khá chậm)
 
     def get_confusion_candidates(self, word, vocabulary):
         """Thay từng đoạn nhầm lẫn (vd 'ch' <-> 'tr') trong từ; giữ lại những từ có trong từ điển."""
@@ -68,14 +69,18 @@ class ImproveSpellChecker:
     def suggest_word(self, word, prev_word, next_word, top_k=3):
         """Top-k phương án (ứng viên, điểm) cho một từ nghi sai."""
         word = word.lower()
-        distance_candidates = generate_candidates_fast(
-            word,
-            self.lm.vocab,
-            self.lm.unigram_counts,
-            max_distance=2,
-            top_n=20
-        )
-        confusion_candidates = self.get_confusion_candidates(word, self.lm.vocab)
+        if word not in self._cand_cache:
+            cands = generate_candidates_fast(
+                word,
+                self.lm.vocab,
+                self.lm.unigram_counts,
+                max_distance=2,
+                top_n=22
+            )
+            self._cand_cache[word] = [c for c in cands if c[0] not in ("<s>", "</s>")][:20]
+        distance_candidates = self._cand_cache[word]
+        confusion_candidates = [c for c in self.get_confusion_candidates(word, self.lm.vocab)
+                                if c not in ("<s>", "</s>")]
         ranked = self.score(word, distance_candidates, confusion_candidates, prev_word, next_word)
         return get_top_k_candidates(ranked, top_k)
 
