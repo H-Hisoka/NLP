@@ -12,6 +12,7 @@ Quy tắc phát hiện giữ nguyên như hai checker hiện có: một từ b�
 """
 import heapq
 import math
+import os
 import re
 import unicodedata
 
@@ -23,13 +24,16 @@ from improved_model import ImproveSpellChecker
 from candidate_generation import generate_candidates_fast
 from error_detection import levenshtein
 from ranking import rank_candidates, get_top_k_candidates
+from preprocessing import normalize_text
 
 EDIT_PENALTY = 1.5      # cùng hệ số phạt edit distance với baseline.py / improved_model.py
-TEXT_COLUMN_CANDIDATES = ["sentence", "correct_sentence", "text", "clean_sentence",
-                          "processed_sentence", "content", "câu"]
+TEXT_COLUMN_CANDIDATES = ["correct_text", "sentence", "correct_sentence", "text", "clean_sentence",
+                          "processed_sentence", "content"]
+SPECIAL_TOKENS = {"<s>", "</s>"}     # có trong lm.vocab nhưng không phải từ để gợi ý
+FALLBACK_TRAIN_FILE = "dulieu.csv"   # file câu đúng do dulieu.py sinh ra
 
 
-# ----------------------------------------------------------------------------- tiện ích
+#  tiện ích
 def nfc(s):
     return unicodedata.normalize("NFC", s)
 
@@ -58,23 +62,30 @@ def split_core(token):
     return m.group(1), m.group(2), m.group(3)
 
 
-# --------------------------------------------------------------------- nạp mô hình ngôn ngữ
-def load_language_model(path=PROCESSED_DATA_FILE, text_col=None, exclude=None):
+#  nạp mô hình ngôn ngữ
+def load_language_model(path=None, text_col=None, exclude=None):
     """
-    Huấn luyện NGramLanguageModel từ file dữ liệu đã xử lý (câu đúng).
-    - text_col: tên cột chứa câu; None thì tự dò.
-    - exclude: tập câu cần loại khỏi dữ liệu huấn luyện (dùng để tránh rò rỉ khi đánh giá).
+    Huấn luyện NGramLanguageModel từ file câu đúng. Mỗi câu được chuẩn hoá bằng
+    preprocessing.normalize_text (chữ thường, bỏ dấu câu) giống cách baseline.py mong đợi.
+    - path: file CSV; None thì thử PROCESSED_DATA_FILE rồi tới dulieu.csv.
+    - text_col: tên cột chứa câu; None thì tự dò (correct_text, sentence, ...).
+    - exclude: các câu cần loại khỏi dữ liệu huấn luyện (so sánh sau khi chuẩn hoá) để tránh rò rỉ.
     Trả về (lm, số câu huấn luyện).
     """
-    df = pd.read_csv(path)
+    if path is None:
+        path = next((p for p in (PROCESSED_DATA_FILE, FALLBACK_TRAIN_FILE) if os.path.exists(p)), None)
+        if path is None:
+            raise FileNotFoundError(f"Không thấy {PROCESSED_DATA_FILE} hay {FALLBACK_TRAIN_FILE}")
+    df = pd.read_csv(path, encoding="utf-8-sig")
     if text_col is None:
         lower = {c.lower(): c for c in df.columns}
         text_col = next((lower[c] for c in TEXT_COLUMN_CANDIDATES if c in lower), None)
         if text_col is None:
             text_col = next((c for c in df.columns if df[c].dtype == object), df.columns[0])
-    sentences = [str(s) for s in df[text_col].dropna()]
+    sentences = [normalize_text(s) for s in df[text_col].dropna()]
     if exclude:
-        sentences = [s for s in sentences if s not in exclude]
+        skip = {normalize_text(e) for e in exclude}
+        sentences = [s for s in sentences if s not in skip]
     lm = NGramLanguageModel()
     lm.train(sentences)
     return lm, len(sentences)
@@ -84,13 +95,24 @@ def build_checkers(lm):
     return {"baseline": BaselineSpellChecker(lm), "improved": ImproveSpellChecker(lm)}
 
 
-# ------------------------------------------------------------------------ gợi ý cho một từ
+#  gợi ý cho một từ
+_DIST_CACHE = {}
+
+
+def distance_candidates(lm, word):
+    """generate_candidates_fast có nhớ kết quả theo từ (hàm gốc duyệt toàn bộ từ điển nên khá chậm)."""
+    key = (id(lm), word)
+    if key not in _DIST_CACHE:
+        cands = generate_candidates_fast(word, lm.vocab, lm.unigram_counts,
+                                         max_distance=2, top_n=MAX_CANDIDATES + 2)
+        _DIST_CACHE[key] = [c for c in cands if c[0] not in SPECIAL_TOKENS][:MAX_CANDIDATES]
+    return _DIST_CACHE[key]
+
+
 def baseline_suggest_word(lm, word, prev_word, next_word, top_k=TOP_K):
     """Cùng cách chấm điểm với BaselineSpellChecker, nhưng trả về Top-k thay vì chỉ top-1."""
-    cands = generate_candidates_fast(word.lower(), lm.vocab, lm.unigram_counts,
-                                     max_distance=2, top_n=MAX_CANDIDATES)
     scored = []
-    for cand, dist, freq in cands:
+    for cand, dist, freq in distance_candidates(lm, word.lower()):
         p1 = lm.get_bigram_prob(prev_word, cand)
         p2 = lm.get_bigram_prob(cand, next_word)
         scored.append((cand, math.log(p1) + math.log(p2) - EDIT_PENALTY * dist))
@@ -118,7 +140,7 @@ def _fill(lm, word, cands, need):
     return cands
 
 
-# --------------------------------------------------------------------- gợi ý cho cả câu/đoạn
+#gợi ý cho cả câu/đoạn
 def suggest_sentence(checker, text, top_k=TOP_K, min_candidates=0):
     """
     Trả về danh sách lỗi, mỗi lỗi là dict:
