@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import random
+from config import DANH_SACH_LOI
 
 def tao_loi(text, loai_loi):
 
@@ -245,40 +246,6 @@ def tao_loi(text, loai_loi):
         return text + " example@gmail"
 
     return text
-
-
-DANH_SACH_LOI = [
-    "missing_character",
-    "extra_character",
-    "duplicate_character",
-    "swap_character",
-    "wrong_capitalization",
-    "wrong_lowercase",
-    "missing_space",
-    "extra_space",
-    "duplicate_word",
-    "missing_word",
-    "swap_word",
-    "wrong_punctuation",
-    "missing_punctuation",
-    "extra_punctuation",
-    "duplicate_punctuation",
-    "spelling_error",
-    "word_order",
-    "word_replacement",
-    "word_insertion",
-    "invalid_character",
-    "wrong_emoji",
-    "missing_emoji",
-    "duplicate_emoji",
-    "teencode",
-    "abbreviation",
-    "code_switching",
-    "unicode_error",
-    "leading_trailing_space",
-    "url_error",
-    "email_error"
-]
 
 # đọc dulieu.csv tạo file mới
 
