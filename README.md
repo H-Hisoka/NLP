@@ -3,11 +3,13 @@ Dự án nhóm (Đề tài 1)
 Rules
 AE phai push len nhanh rieng cua minh truoc khi t merge vao main cho ae
 AE co the push nhanh cua minh, con nhanh main phai tao pull request va dc review truoc khi merge
-Lam sao de lay code sau khi 1 nguoi lam xong
+
+# Lam sao de lay code sau khi 1 nguoi lam xong
 Nguoi A lam xong phan dau, push code len nhanh rieng, va tao pull request
 Huy se review va merge no vao main
 Nguoi B tiep tuc lam thi, len local,nhảy qua nhánh main, git pull origin main ve, sau do nhay qua nhanh phu de lam tiep và git merge main
-Va lam tiep
+
+# Va lam tiep
 đang o nhánh phu
 git checkout main
 git pull origin main
