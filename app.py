@@ -27,7 +27,7 @@ st.sidebar.caption(f"Mô hình ngôn ngữ huấn luyện trên {n_sentences} c�
 system = st.sidebar.radio("Hệ thống", ["Cải tiến", "Baseline"])
 checker = checkers["improved" if system == "Cải tiến" else "baseline"]
  
-# ---- nhập văn bản hoặc tải file .txt
+#  nhập văn bản hoặc tải file .txt
 uploaded = st.file_uploader("Tải lên file .txt (không bắt buộc)", type=["txt"])
 if uploaded is not None:
     sig = (uploaded.name, uploaded.size)
@@ -52,7 +52,7 @@ if errors is not None:
     if not errors:
         st.success("Không phát hiện lỗi nào (mọi từ đều có trong từ điển).")
     else:
-        # ---- đánh dấu vị trí nghi sai
+        #  đánh dấu vị trí nghi sai
         parts, pos = [], 0
         for k, e in enumerate(errors, 1):
             parts.append(html.escape(checked[pos:e["start"]]))
@@ -64,7 +64,7 @@ if errors is not None:
         st.markdown("<div style='line-height:1.9;font-size:16px'>" + "".join(parts).replace("\n", "<br>")
                     + "</div>", unsafe_allow_html=True)
  
-        # ---- chọn phương án cho từng lỗi
+        # chọn phương án cho từng lỗi
         st.subheader(f"{len(errors)} lỗi — chọn phương án hoặc từ chối")
         choices = {}
         for k, e in enumerate(errors):
