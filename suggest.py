@@ -15,9 +15,9 @@ import math
 import os
 import re
 import unicodedata
-
+ 
 import pandas as pd
-
+ 
 from config import PROCESSED_DATA_FILE, TOP_K, MAX_CANDIDATES
 from baseline import NGramLanguageModel, BaselineSpellChecker
 from improved_model import ImproveSpellChecker
@@ -25,43 +25,43 @@ from candidate_generation import generate_candidates_fast
 from error_detection import levenshtein
 from ranking import rank_candidates, get_top_k_candidates
 from preprocessing import normalize_text
-
+ 
 EDIT_PENALTY = 1.5      # cùng hệ số phạt edit distance với baseline.py / improved_model.py
 TEXT_COLUMN_CANDIDATES = ["correct_text", "sentence", "correct_sentence", "text", "clean_sentence",
                           "processed_sentence", "content"]
 SPECIAL_TOKENS = {"<s>", "</s>"}     # có trong lm.vocab nhưng không phải từ để gợi ý
 FALLBACK_TRAIN_FILE = "dulieu.csv"   # file câu đúng do dulieu.py sinh ra
-
-
+ 
+ 
 #  tiện ích
 def nfc(s):
     return unicodedata.normalize("NFC", s)
-
-
+ 
+ 
 def strip_marks(s):
     """Bỏ toàn bộ dấu (thanh, mũ, móc, trăng), đ -> d."""
     d = unicodedata.normalize("NFD", s)
     d = "".join(ch for ch in d if not unicodedata.combining(ch))
     return d.replace("đ", "d").replace("Đ", "D")
-
-
+ 
+ 
 def match_case(orig, cand):
     if len(orig) > 1 and orig.isupper():
         return cand.upper()
     if orig[:1].isupper():
         return cand[:1].upper() + cand[1:]
     return cand
-
-
+ 
+ 
 _TOKEN_RE = re.compile(r"^(\W*)(.*?)(\W*)$", re.UNICODE)
-
-
+ 
+ 
 def split_core(token):
     """'tập.' -> ('', 'tập', '.')"""
     m = _TOKEN_RE.match(token)
     return m.group(1), m.group(2), m.group(3)
-
-
+ 
+ 
 #  nạp mô hình ngôn ngữ
 def load_language_model(path=None, text_col=None, exclude=None):
     """
@@ -89,16 +89,16 @@ def load_language_model(path=None, text_col=None, exclude=None):
     lm = NGramLanguageModel()
     lm.train(sentences)
     return lm, len(sentences)
-
-
+ 
+ 
 def build_checkers(lm):
     return {"baseline": BaselineSpellChecker(lm), "improved": ImproveSpellChecker(lm)}
-
-
+ 
+ 
 #  gợi ý cho một từ
 _DIST_CACHE = {}
-
-
+ 
+ 
 def distance_candidates(lm, word):
     """generate_candidates_fast có nhớ kết quả theo từ (hàm gốc duyệt toàn bộ từ điển nên khá chậm)."""
     key = (id(lm), word)
@@ -107,8 +107,8 @@ def distance_candidates(lm, word):
                                          max_distance=2, top_n=MAX_CANDIDATES + 2)
         _DIST_CACHE[key] = [c for c in cands if c[0] not in SPECIAL_TOKENS][:MAX_CANDIDATES]
     return _DIST_CACHE[key]
-
-
+ 
+ 
 def baseline_suggest_word(lm, word, prev_word, next_word, top_k=TOP_K):
     """Cùng cách chấm điểm với BaselineSpellChecker, nhưng trả về Top-k thay vì chỉ top-1."""
     scored = []
@@ -117,14 +117,14 @@ def baseline_suggest_word(lm, word, prev_word, next_word, top_k=TOP_K):
         p2 = lm.get_bigram_prob(cand, next_word)
         scored.append((cand, math.log(p1) + math.log(p2) - EDIT_PENALTY * dist))
     return get_top_k_candidates(rank_candidates(scored), top_k)
-
-
+ 
+ 
 def suggest_word(checker, word, prev_word, next_word, top_k=TOP_K):
     if hasattr(checker, "suggest_word"):                      # ImproveSpellChecker
         return checker.suggest_word(word, prev_word, next_word, top_k)
     return baseline_suggest_word(checker.lm, word, prev_word, next_word, top_k)
-
-
+ 
+ 
 def _fill(lm, word, cands, need):
     """Bổ sung ứng viên gần nhất trong từ điển để luôn đủ `need` phương án (dùng cho giao diện)."""
     have = {c for c, _ in cands}
@@ -138,40 +138,89 @@ def _fill(lm, word, cands, need):
             break
         cands.append((v, base - levenshtein(word, v)))
     return cands
-
-
+ 
+ 
 #gợi ý cho cả câu/đoạn
+_SENT_END = (".", "!", "?", "…")
+ 
+ 
+def is_suspect(checker, core):
+    """Từ có bị nghi sai (kiểu không có trong từ điển) không. Mỗi hệ thống có thể tự định nghĩa `is_suspect`."""
+    if hasattr(checker, "is_suspect"):
+        return checker.is_suspect(core)
+    return core.isalpha() and core.lower() not in checker.lm.vocab      # quy tắc gốc của baseline
+ 
+ 
 def suggest_sentence(checker, text, top_k=TOP_K, min_candidates=0):
     """
-    Trả về danh sách lỗi, mỗi lỗi là dict:
-        index       chỉ số token (theo text.split())
-        start, end  vị trí ký tự của từ lỗi trong text (không gồm dấu câu dính kèm)
-        original    từ lỗi
+    Trả về danh sách lỗi (sắp theo vị trí), mỗi lỗi là dict:
+        index       chỉ số token đầu tiên của lỗi (theo text.split())
+        n_tokens    số token mà lỗi bao phủ (2 khi là lỗi thừa dấu cách giữa hai âm tiết, còn lại là 1)
+        start, end  vị trí ký tự của đoạn lỗi trong text (không gồm dấu câu dính kèm)
+        original    đoạn lỗi
+        kind        "oov" (từ không có trong từ điển) | "merge" (thừa dấu cách) | "real-word"
         candidates  [(phương án, điểm), ...] đã xếp hạng, tối đa top_k (có thể rỗng)
+    Hệ thống nào có thêm các hàm `suggest_merge` / `real_word_suggest` (improved_model) thì được dùng thêm.
     """
     text = nfc(text)
     lm = checker.lm
     toks = list(re.finditer(r"\S+", text))
     parts = [split_core(m.group()) for m in toks]
-    errors = []
+    n = len(toks)
+ 
+    def context(i, j):
+        """Từ đứng trước token i và từ đứng sau token j (đã bỏ dấu câu, chữ thường)."""
+        start = i == 0 or parts[i - 1][2][-1:] in _SENT_END
+        end = j == n - 1 or parts[j][2][-1:] in _SENT_END
+        prev_word = "<s>" if start else (parts[i - 1][1].lower() or "<s>")
+        next_word = "</s>" if end else (parts[j + 1][1].lower() or "</s>")
+        return prev_word, next_word
+ 
+    errors, used = [], set()
+ 
+    # 1) thừa dấu cách giữa hai âm tiết: "đa ng" -> "đang"
+    if hasattr(checker, "suggest_merge"):
+        for i in range(n - 1):
+            (lead1, core1, trail1), (lead2, core2, trail2) = parts[i], parts[i + 1]
+            if i in used or not core1 or not core2 or trail1 or lead2:
+                continue                                         # giữa hai token có dấu câu thì không ghép
+            prev_word, next_word = context(i, i + 1)
+            cands = list(checker.suggest_merge(core1, core2, prev_word, next_word, top_k))
+            if not cands:
+                continue
+            if len(cands) < min_candidates:
+                cands = _fill(lm, core1.lower() + core2.lower(), cands, min_candidates)
+            start = toks[i].start() + len(lead1)
+            end = toks[i + 1].start() + len(lead2) + len(core2)
+            errors.append({"index": i, "n_tokens": 2, "start": start, "end": end, "kind": "merge",
+                           "original": text[start:end],
+                           "candidates": [(match_case(core1, c), s) for c, s in cands]})
+            used |= {i, i + 1}
+ 
+    # 2) từng token: từ nghi sai kiểu "không có trong từ điển", hoặc real-word error
     for i, m in enumerate(toks):
         lead, core, trail = parts[i]
-        low = core.lower()
-        if not core or not core.isalpha() or low in lm.vocab:
+        if i in used or not core:
             continue
-        sentence_start = i == 0 or parts[i - 1][2][-1:] in (".", "!", "?", "…")
-        sentence_end = i == len(toks) - 1 or trail[-1:] in (".", "!", "?", "…")
-        prev_word = "<s>" if sentence_start else parts[i - 1][1].lower()
-        next_word = "</s>" if sentence_end else parts[i + 1][1].lower()
-        cands = list(suggest_word(checker, core, prev_word, next_word, top_k))
+        prev_word, next_word = context(i, i)
+        if is_suspect(checker, core):
+            kind = "oov"
+            cands = list(suggest_word(checker, core, prev_word, next_word, top_k))
+        elif hasattr(checker, "real_word_suggest") and core.isalpha():
+            kind = "real-word"
+            cands = list(checker.real_word_suggest(core, prev_word, next_word, top_k))
+            if not cands:
+                continue
+        else:
+            continue
         if len(cands) < min_candidates:
-            cands = _fill(lm, low, cands, min_candidates)
+            cands = _fill(lm, core.lower(), cands, min_candidates)
         start = m.start() + len(lead)
-        errors.append({"index": i, "start": start, "end": start + len(core), "original": core,
-                       "candidates": [(match_case(core, c), s) for c, s in cands]})
-    return errors
-
-
+        errors.append({"index": i, "n_tokens": 1, "start": start, "end": start + len(core), "kind": kind,
+                       "original": core, "candidates": [(match_case(core, c), s) for c, s in cands]})
+    return sorted(errors, key=lambda e: e["start"])
+ 
+ 
 def apply_choices(text, errors, choices):
     """choices: {vị trí trong `errors`: chuỗi thay thế, hoặc None nếu từ chối}."""
     text = nfc(text)
@@ -181,14 +230,14 @@ def apply_choices(text, errors, choices):
             e = errors[k]
             text = text[:e["start"]] + c + text[e["end"]:]
     return text
-
-
+ 
+ 
 def autocorrect(text, errors):
     """Chấp nhận phương án đầu tiên của mọi lỗi."""
     return apply_choices(text, errors,
                          {k: e["candidates"][0][0] for k, e in enumerate(errors) if e["candidates"]})
-
-
+ 
+ 
 def confidence(candidates):
     """softmax trên điểm -> độ tin cậy 0..1 để hiển thị."""
     if not candidates:
