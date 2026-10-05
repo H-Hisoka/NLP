@@ -1,7 +1,5 @@
 # NLP
 Dự án nhóm (Đề tài 1)
-# NLP
-Dự án nhóm (Đề tài 1)
 cách chạy giao diện: 
 làm theo các bước này, trên Windows PowerShell hoặc terminal trong VS Code.
 
