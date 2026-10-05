@@ -107,6 +107,7 @@ def top_confusions(cm, k=10):
     return sorted(pairs, key=lambda x: -x[2])[:k]
 
 
+
 def failure_examples(df, error_type, k=5):
     """Một vài mẫu sai Top-3 của một nhóm lỗi, để đưa vào báo cáo."""
     sub = df[(df["error_type"] == error_type) & (~df["top3_ok"])]
