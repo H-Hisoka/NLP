@@ -108,7 +108,9 @@ def run_system(name, checker, rows, top_k, tech, proper):
         for u in units:
             i1, i2 = u["span"]
             detected = any(k in by_idx for k in range(i1, i2))
-            cl = [c.lower() for c, _ in by_idx[i1]["candidates"]] if u["fixable"] and detected else []
+            hit = by_idx.get(i1)
+            same_span = hit is not None and hit.get("n_tokens", 1) == i2 - i1   # đúng phạm vi lỗi chuẩn
+            cl = [c.lower() for c, _ in hit["candidates"]] if same_span else []
             top1 = cl[:1] == [u["gold"].lower()]
             top3_hit = u["gold"].lower() in cl[:3]
             TP += detected
