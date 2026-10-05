@@ -1,75 +1,7 @@
-from error_detection import levenshtein, damerau_levenshtein        
+from error_detection import damerau_levenshtein_trace       
 import re
 from config import TEENCODE_REPLACEMENTS, ABBREVIATION_REPLACEMENTS, PUNCTUATION, EMOIJI_LIST
 import unicodedata
-
-def levenshtein_trace(a: str, b: str):
-    dist, dp = levenshtein(a, b, return_matrix=True)
-    i, j = len(a), len(b)
-    ops = []
-
-    while i > 0 or j > 0:
-        if i > 0 and j > 0 and a[i-1] == b[j-1] and dp[i][j] == dp[i-1][j-1]:
-            ops.append(("MATCH", a[i-1], b[j-1]))
-            i -= 1; j -= 1
-        elif i > 0 and j > 0 and dp[i][j] == dp[i-1][j-1] + 1:
-            ops.append(("SUBSTITUTE", a[i-1], b[j-1]))
-            i -= 1; j -= 1
-        elif i > 0 and dp[i][j] == dp[i-1][j] + 1:
-            ops.append(("DELETE", a[i-1], ""))
-            i -= 1
-        else:
-            ops.append(("INSERT", "", b[j-1]))
-            j -= 1
-
-    ops.reverse()
-    return dist, ops
-
-def damerau_levenshtein_trace(a: str, b: str):
-    dist, dp = damerau_levenshtein(a, b, return_matrix=True)
-    i, j = len(a), len(b)
-    ops = []
-    while i > 0 or j > 0:
-        # MATCH
-        if (
-            i > 0 and j > 0
-            and a[i - 1] == b[j - 1]
-            and dp[i][j] == dp[i - 1][j - 1]
-        ):
-            ops.append(("MATCH", a[i - 1], b[j - 1]))
-            i -= 1
-            j -= 1
-        # TRANSPOSE
-        elif (
-            i > 1 and j > 1
-            and a[i - 1] == b[j - 2]
-            and a[i - 2] == b[j - 1]
-            and dp[i][j] == dp[i - 2][j - 2] + 1
-        ):
-            ops.append(("TRANSPOSE", a[i - 2:i], b[j - 2:j]))
-            i -= 2
-            j -= 2
-        # SUBSTITUTE
-        elif (
-            i > 0 and j > 0
-            and dp[i][j] == dp[i - 1][j - 1] + 1
-        ):
-            ops.append(("SUBSTITUTE", a[i - 1], b[j - 1]))
-            i -= 1
-            j -= 1
-        # DELETE
-        elif (
-            i > 0
-            and dp[i][j] == dp[i - 1][j] + 1
-        ):
-            ops.append(("DELETE", a[i - 1], ""))
-            i -= 1
-        # INSERT
-        else:
-            ops.append(("INSERT", "", b[j - 1]))
-            j -= 1
-    ops.reverse()
-    return dist, ops
 
 def classify_error(a: str, b: str):
     dist, ops = damerau_levenshtein_trace(a, b)
@@ -83,36 +15,78 @@ def classify_error(a: str, b: str):
 
 def missing_character_error(a: str, b: str):
     dist, ops = damerau_levenshtein_trace(a, b)
-    if dist == 1 and any(op[0] == "INSERT" for op in ops):
-        return True
-    return False
+    if dist == 1:
+        for i, op in enumerate(ops):
+            if op[0] == "INSERT":
+                # Tính vị trí dựa trên các thao tác trước đó
+                position = sum(
+                    1 for x in ops[:i]
+                    if x[0] != "INSERT"
+                )
+                return {
+                    "error_type": "missing_character",
+                    "position": position,
+                    "wrong_char": "",
+                    "correct_char": op[2]
+                }
+    return None
+
 
 def extra_character_error(a: str, b: str):
     dist, ops = damerau_levenshtein_trace(a, b)
-    if dist == 1 and any(op[0] == "DELETE" for op in ops):
-        return True
-    return False
+    if dist == 1:
+        position = 0
+        for op in ops:
+            if op[0] == "DELETE":
+                return {
+                    "error_type": "extra_character",
+                    "position": position,
+                    "wrong_char": op[1],
+                    "correct_char": ""
+                }
+            if op[0] != "INSERT":
+                position += 1
+    return None
+
 
 def duplicate_character_error(a: str, b: str):
     if len(a) != len(b) + 1:
-        return False
+        return None
     for i in range(len(a) - 1):
         if a[i] == a[i + 1]:
             test = a[:i] + a[i + 1:]
             if test == b:
-                return True
-    return False
+                return {
+                    "error_type": "duplicate_character",
+                    "position": i,
+                    "wrong_char": a[i],
+                    "correct_char": ""
+                }
+    return None
+
 
 def swap_character_error(a: str, b: str):
     dist, ops = damerau_levenshtein_trace(a, b)
-    if dist == 1 and any(op[0] == "TRANSPOSE" for op in ops):
-        return True
-    return False
+    if dist == 1:
+        position = 0
+        for op in ops:
+            if op[0] == "TRANSPOSE":
+                return {
+                    "error_type": "character_transposition",
+                    "positions": [position, position + 1],
+                    "wrong_chars": op[1],
+                    "correct_chars": op[2]
+                }
+            if op[0] != "INSERT":
+                position += 1
+    return None
+
 
 def wrong_capitalization_error(a: str, b: str):
     dist, ops = damerau_levenshtein_trace(a, b)
     if dist != 1:
-        return False
+        return None
+    position = 0
     for op in ops:
         if op[0] == "SUBSTITUTE":
             wrong_char = op[1]
@@ -122,122 +96,189 @@ def wrong_capitalization_error(a: str, b: str):
                 and wrong_char.islower()
                 and correct_char.isupper()
             ):
-                return True
-    return False
+                return {
+                    "error_type": "wrong_capitalization",
+                    "position": position,
+                    "wrong_char": wrong_char,
+                    "correct_char": correct_char
+                }
+            position += 1
+        elif op[0] != "INSERT":
+            position += 1
+    return None
+
 
 def wrong_lowercase_error(a: str, b: str):
     dist, ops = damerau_levenshtein_trace(a, b)
     if dist != 1:
-        return False
+        return None
+    position = 0
     for op in ops:
         if op[0] == "SUBSTITUTE":
             wrong_char = op[1]
             correct_char = op[2]
-
             if (
                 wrong_char.lower() == correct_char.lower()
                 and wrong_char.isupper()
                 and correct_char.islower()
             ):
-                return True
-    return False
+                return {
+                    "error_type": "wrong_lowercase",
+                    "position": position,
+                    "wrong_char": wrong_char,
+                    "correct_char": correct_char
+                }
+            position += 1
+        elif op[0] != "INSERT":
+            position += 1
+    return None
+
 
 def missing_space_error(a: str, b: str):
     if len(b) != len(a) + 1:
-        return False
-
+        return None
     for i in range(len(b)):
-        if b[:i] + b[i+1:] == a:
+        if b[:i] + b[i + 1:] == a:
             if b[i] == " ":
-                return True
+                return {
+                    "error_type": "missing_space",
+                    "position": i,
+                    "wrong_char": "",
+                    "correct_char": " "
+                }
+    return None
 
-    return False
 
 def extra_space_error(a: str, b: str):
     if len(a) != len(b) + 1:
-        return False
-
+        return None
     for i in range(len(a)):
-        if a[:i] + a[i+1:] == b:
+        if a[:i] + a[i + 1:] == b:
             if a[i] == " ":
-                return True
+                return {
+                    "error_type": "extra_space",
+                    "position": i,
+                    "wrong_char": " ",
+                    "correct_char": ""
+                }
+    return None
 
-    return False
 
 def duplicate_word_error(a: str, b: str):
     words_a = a.split()
     words_b = b.split()
     if len(words_a) != len(words_b) + 1:
-        return False
+        return None
     for i in range(len(words_a)):
         test = words_a[:i] + words_a[i + 1:]
         if test == words_b:
-            return True
-    return False
+            return {
+                "error_type": "word_repetition",
+                "word_position": i,
+                "wrong_word": words_a[i],
+                "correct_word": ""
+            }
+    return None
+
 
 def missing_word_error(a: str, b: str):
     words_a = a.split()
     words_b = b.split()
     if len(words_b) != len(words_a) + 1:
-        return False
+        return None
     for i in range(len(words_b)):
         test = words_b[:i] + words_b[i + 1:]
         if test == words_a:
-            return True
-    return False
+            return {
+                "error_type": "missing_word",
+                "word_position": i,
+                "wrong_word": "",
+                "correct_word": words_b[i]
+            }
+    return None
 
 
 def swap_word_error(a: str, b: str):
     words_a = a.split()
     words_b = b.split()
     if len(words_a) != len(words_b):
-        return False
+        return None
     differences = [
         i
         for i in range(len(words_a))
         if words_a[i] != words_b[i]
     ]
     if len(differences) != 2:
-        return False
+        return None
     i, j = differences
-    return (
+    if (
         words_a[i] == words_b[j]
         and words_a[j] == words_b[i]
-    )
-
+    ):
+        return {
+            "error_type": "word_order",
+            "word_positions": [i, j],
+            "wrong_words": [words_a[i], words_a[j]],
+            "correct_words": [words_b[i], words_b[j]]
+        }
+    return None
 
 
 def wrong_punctuation_error(text_a, text_b):
-    if text_a[:-1] == "." and  text_b[:-1] != ".":
-        return True
-    elif text_a[:-1] == "!" and  text_b[:-1] != "!":
-        return True
-    elif text_a[:-1] == "?" and  text_b[:-1] != "?":
-        return True
-    return False
+    if not text_a or not text_b:
+        return None
+    punctuation = ".!?"
+    if len(text_a) == len(text_b):
+        if (
+            text_a[:-1] == text_b[:-1]
+            and text_a[-1] in punctuation
+            and text_b[-1] in punctuation
+            and text_a[-1] != text_b[-1]
+        ):
+            return {
+                "error_type": "wrong_punctuation",
+                "position": len(text_a) - 1,
+                "wrong_char": text_a[-1],
+                "correct_char": text_b[-1]
+            }
+    return None
+
 
 def missing_punctuation_error(text_a, text_b):
     if not text_a or not text_b:
-        return False
+        return None
     if (
         text_b[-1] in PUNCTUATION
         and text_a[-1] not in PUNCTUATION
+        and text_a == text_b[:-1]
     ):
-        return True
-    return False
+        return {
+            "error_type": "missing_punctuation",
+            "position": len(text_a),
+            "wrong_char": "",
+            "correct_char": text_b[-1]
+        }
+    return None
+
 
 def extra_punctuation_error(text_a, text_b):
     if len(text_a) != len(text_b) + 1:
-        return False
+        return None
     for i in range(len(text_a)):
         if text_a[:i] + text_a[i + 1:] == text_b:
-            if text_b[i] in PUNCTUATION:
-                return True
-    return False
+            if text_a[i] in PUNCTUATION:
+                return {
+                    "error_type": "extra_punctuation",
+                    "position": i,
+                    "wrong_char": text_a[i],
+                    "correct_char": ""
+                }
+    return None
+
 
 def duplicate_punctuation_error(text_a, text_b):
     if len(text_a) != len(text_b) + 1:
-        return False
+        return None
     for i in range(len(text_a) - 1):
         if (
             text_a[i] == text_a[i + 1]
@@ -245,98 +286,199 @@ def duplicate_punctuation_error(text_a, text_b):
         ):
             test = text_a[:i] + text_a[i + 1:]
             if test == text_b:
-                return True
-    return False
+                return {
+                    "error_type": "duplicate_punctuation",
+                    "position": i,
+                    "wrong_char": text_a[i],
+                    "correct_char": ""
+                }
+    return None
 
 
 def spelling_error(a, b):
     dist, ops = damerau_levenshtein_trace(a, b)
     if dist != 1:
-        return False
-    return any(
-        op[0] == "SUBSTITUTE"
-        for op in ops
-    )
+        return None
+    position = 0
+    for op in ops:
+        if op[0] == "SUBSTITUTE":
+            if op[1].lower() != op[2].lower():
+                return {
+                    "error_type": "spelling_error",
+                    "position": position,
+                    "wrong_char": op[1],
+                    "correct_char": op[2]
+                }
+            position += 1
+        elif op[0] != "INSERT":
+            position += 1
+    return None
 
 
 def word_order_error(a, b):
     words_a = a.split()
     words_b = b.split()
     if len(words_a) != len(words_b):
-        return False
+        return None
     if words_a == words_b:
-        return False
-    return sorted(words_a) == sorted(words_b)
+        return None
+    if sorted(words_a) == sorted(words_b):
+        positions = [
+            i
+            for i in range(len(words_a))
+            if words_a[i] != words_b[i]
+        ]
+        return {
+            "error_type": "word_order",
+            "word_positions": positions,
+            "scope": "sentence"
+        }
+    return None
+
 
 def word_replacement_error(text_a, text_b):
     words_a = text_a.split()
     words_b = text_b.split()
     if len(words_a) != len(words_b):
-        return False
-    differences = sum(
-        x != y
-        for x, y in zip(words_a, words_b)
-    )
+        return None
+    differences = [
+        i
+        for i, (x, y) in enumerate(zip(words_a, words_b))
+        if x != y
+    ]
+    if len(differences) == 1:
+        i = differences[0]
 
-    return differences == 1
+        return {
+            "error_type": "wrong_word",
+            "word_position": i,
+            "wrong_word": words_a[i],
+            "correct_word": words_b[i]
+        }
+    return None
+
 
 def word_insertion_error(text_a, text_b):
     words_a = text_a.split()
     words_b = text_b.split()
-    return len(words_b) == len(words_a) + 1
+    if len(words_b) != len(words_a) + 1:
+        return None
+    for i in range(len(words_b)):
+        test = words_b[:i] + words_b[i + 1:]
+        if test == words_a:
+            return {
+                "error_type": "missing_word",
+                "word_position": i,
+                "wrong_word": "",
+                "correct_word": words_b[i]
+            }
+    return None
 
 
 def invalid_character_error(text_a, text_b):
-    invalid_chars = set("!@#$%^&*()_+=[]{}|;:'\",<>/?`~")
-    for char in text_b:
-        if char in invalid_chars:
-            return True
-    return False
+    invalid_chars = set(
+        "!@#$%^&*()_+=[]{}|;:'\\\",<>/?`~"
+    )
+    positions = [
+        i
+        for i, char in enumerate(text_a)
+        if char in invalid_chars
+    ]
+    if positions:
+        return {
+            "error_type": "invalid_character",
+            "positions": positions,
+            "wrong_chars": [text_a[i] for i in positions]
+        }
+    return None
+
 
 def wrong_emoji_error(text_a, text_b):
     emoji_pattern = r'[\U0001F300-\U0001FAFF]'
-    emojis_a = re.findall(emoji_pattern, text_a)
-    emojis_b = re.findall(emoji_pattern, text_b)
+    emojis_a = list(re.finditer(emoji_pattern, text_a))
+    emojis_b = list(re.finditer(emoji_pattern, text_b))
     if not emojis_a or not emojis_b:
-        return False
-    if len(emojis_a) == len(emojis_b) and emojis_a != emojis_b:
-        return True
-    return False
+        return None
+    chars_a = [m.group() for m in emojis_a]
+    chars_b = [m.group() for m in emojis_b]
+    if len(chars_a) == len(chars_b) and chars_a != chars_b:
+        positions = [
+            i
+            for i, (x, y) in enumerate(zip(chars_a, chars_b))
+            if x != y
+        ]
+        return {
+            "error_type": "wrong_emoji",
+            "emoji_positions": positions,
+            "wrong_emoji": chars_a,
+            "correct_emoji": chars_b
+        }
+    return None
+
 
 def missing_emoji_error(text_a, text_b):
-    emojis_a = re.findall(EMOIJI_LIST, text_a)
-    emojis_b = re.findall(EMOIJI_LIST, text_b)
+    emoji_pattern = EMOIJI_LIST
+    emojis_a = list(re.finditer(emoji_pattern, text_a))
+    emojis_b = list(re.finditer(emoji_pattern, text_b))
+    if len(emojis_b) != len(emojis_a) + 1:
+        return None
+    chars_a = [m.group() for m in emojis_a]
+    chars_b = [m.group() for m in emojis_b]
+    for i in range(len(chars_b)):
+        test = chars_b[:i] + chars_b[i + 1:]
+        if test == chars_a:
+            return {
+                "error_type": "missing_emoji",
+                "emoji_position": i,
+                "correct_emoji": chars_b[i]
+            }
+    return None
 
-    return len(emojis_b) == len(emojis_a) + 1
 
 def duplicate_emoji_error(text_a, text_b):
-    emojis_a = re.findall(EMOIJI_LIST, text_a)
-    emojis_b = re.findall(EMOIJI_LIST, text_b)
-
+    emoji_pattern = EMOIJI_LIST
+    emojis_a = list(re.finditer(emoji_pattern, text_a))
+    emojis_b = list(re.finditer(emoji_pattern, text_b))
     if len(emojis_a) != len(emojis_b) + 1:
-        return False
-
-    for i in range(len(emojis_a)):
-
-        test = emojis_a[:i] + emojis_a[i + 1:]
-
-        if test == emojis_b:
-            return True
-
-    return False
+        return None
+    chars_a = [m.group() for m in emojis_a]
+    chars_b = [m.group() for m in emojis_b]
+    for i in range(len(chars_a)):
+        test = chars_a[:i] + chars_a[i + 1:]
+        if test == chars_b:
+            return {
+                "error_type": "duplicate_emoji",
+                "emoji_position": i,
+                "wrong_emoji": chars_a[i]
+            }
+    return None
 
 
 def teencode_error(text_a, text_b):
     for teencode, replacement in TEENCODE_REPLACEMENTS.items():
         if teencode in text_a and replacement in text_b:
-            return True
-    return False
+            position = text_a.find(teencode)
+            return {
+                "error_type": "teencode",
+                "position": position,
+                "wrong_text": teencode,
+                "correct_text": replacement
+            }
+    return None
+
 
 def abbreviation_error(text_a, text_b):
     for abbreviation, replacement in ABBREVIATION_REPLACEMENTS.items():
         if abbreviation in text_a and replacement in text_b:
-            return True
-    return False
+            position = text_a.find(abbreviation)
+            return {
+                "error_type": "abbreviation",
+                "position": position,
+                "wrong_text": abbreviation,
+                "correct_text": replacement
+            }
+    return None
+
 
 def code_switching_error(text_a, text_b):
     pattern = r'\b[a-zA-Z]+\b'
@@ -351,34 +493,130 @@ def code_switching_error(text_a, text_b):
         for word in words_a
         if word.lower() not in words_b_lower
     ]
-    return len(extra_english) > 0
+    if extra_english:
+        positions = []
+        for word in extra_english:
+            match = re.search(
+                rf'\b{re.escape(word)}\b',
+                text_a
+            )
+            if match:
+                positions.append({
+                    "start": match.start(),
+                    "end": match.end() - 1,
+                    "text": word
+                })
+        return {
+            "error_type": "code_switching",
+            "positions": positions,
+            "scope": "sentence"
+        }
+    return None
 
 
 def unicode_error(a, b):
     normalized_a = unicodedata.normalize("NFC", a)
+    if a != normalized_a:
+        positions = [
+            i
+            for i, (x, y) in enumerate(zip(a, normalized_a))
+            if x != y
+        ]
+        return {
+            "error_type": "unicode_error",
+            "positions": positions,
+            "scope": "text"
+        }
+    return None
 
-    return a != normalized_a
 
 def leading_trailing_space_error(text_a, text_b):
-    return text_a.strip() == text_b and text_a != text_b
+    if text_a.strip() == text_b and text_a != text_b:
+        positions = []
+        if text_a.startswith(" "):
+            positions.append(0)
+        if text_a.endswith(" "):
+            positions.append(len(text_a) - 1)
+        return {
+            "error_type": "leading_trailing_space",
+            "positions": positions,
+            "scope": "text"
+        }
+    return None
+
 
 def url_error(a: str, b: str):
-    url_a = re.findall(r'https?//[^\s]+', a)
-    url_b = re.findall(r'https?://[^\s]+', b)
-    if url_a and url_b:
-        return True
-    return False
+    invalid_pattern = r'https?//[^\s]+'
+    valid_pattern = r'https?://[^\s]+'
+    invalid_urls = list(re.finditer(invalid_pattern, a))
+    valid_urls = re.findall(valid_pattern, b)
+    if invalid_urls and valid_urls:
+        match = invalid_urls[0]
+        return {
+            "error_type": "url_error",
+            "position": match.start(),
+            "end_position": match.end() - 1,
+            "wrong_url": match.group(),
+            "correct_url": valid_urls[0]
+        }
+    return None
+
 
 def email_error(a: str, b: str):
-    email_a = re.findall(r'\b[\w.-]+@[\w.-]+\b', a)
-    email_b = re.findall(r'\b[\w.-]+@[\w.-]+\.[A-Za-z]{2,}\b', b)
-    if email_a and email_b:
-        return True
-    return False
+    invalid_pattern = r'\b[\w.-]+@[\w.-]+\b'
+    valid_pattern = r'\b[\w.-]+@[\w.-]+\.[A-Za-z]{2,}\b'
+    invalid_emails = list(re.finditer(invalid_pattern, a))
+    valid_emails = re.findall(valid_pattern, b)
+    if invalid_emails and valid_emails:
+        match = invalid_emails[0]
+        return {
+            "error_type": "email_error",
+            "position": match.start(),
+            "end_position": match.end() - 1,
+            "wrong_email": match.group(),
+            "correct_email": valid_emails[0]
+        }
+    return None
 
-#Thêm hàm xử lý tổng
+def classify_character_errors(wrong_text, correct_text):
+    errors = []
+    errors.append(missing_character_error(wrong_text, correct_text))
+    errors.append(extra_character_error(wrong_text, correct_text))
+    errors.append(duplicate_character_error(wrong_text, correct_text))
+    errors.append(swap_character_error(wrong_text, correct_text))
+    errors.append(wrong_capitalization_error(wrong_text, correct_text))
+    errors.append(wrong_lowercase_error(wrong_text, correct_text))
+    errors.append(spelling_error(wrong_text, correct_text))
+    errors.append(invalid_character_error(wrong_text, correct_text))
+    errors.append(unicode_error(wrong_text, correct_text))
+    return [e for e in errors if e is not None]
 
+def classify_word_errors(wrong_text, correct_text):
+    errors = []
+    errors.append(duplicate_word_error(wrong_text, correct_text))
+    errors.append(missing_word_error(wrong_text, correct_text))
+    errors.append(swap_word_error(wrong_text, correct_text))
+    errors.append(word_order_error(wrong_text, correct_text))
+    errors.append(word_replacement_error(wrong_text, correct_text))
+    errors.append(word_insertion_error(wrong_text, correct_text))
+    errors.append(teencode_error(wrong_text, correct_text))
+    errors.append(abbreviation_error(wrong_text, correct_text))
+    return [e for e in errors if e is not None]
 
+def classify_text_errors(wrong_text, correct_text):
+    errors = []
+    errors.append(wrong_punctuation_error(wrong_text, correct_text))
+    errors.append(missing_punctuation_error(wrong_text, correct_text))
+    errors.append(extra_punctuation_error(wrong_text, correct_text))
+    errors.append(duplicate_punctuation_error(wrong_text, correct_text))
+    errors.append(wrong_emoji_error(wrong_text, correct_text))
+    errors.append(missing_emoji_error(wrong_text, correct_text))
+    errors.append(duplicate_emoji_error(wrong_text, correct_text))
+    errors.append(code_switching_error(wrong_text, correct_text))
+    errors.append(leading_trailing_space_error(wrong_text, correct_text))
+    errors.append(url_error(wrong_text, correct_text))
+    errors.append(email_error(wrong_text, correct_text))
+    return [e for e in errors if e is not None]
 
     
 
