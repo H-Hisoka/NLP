@@ -3,6 +3,7 @@ import os
 import random
 from config import DANH_SACH_LOI
 
+
 def tao_loi(text, loai_loi):
 
     if not isinstance(text, str):
