@@ -1,9 +1,9 @@
 
 from config import CONFUSION_SET
-from baseline import NGramLanguageModel
+from evaluation.baseline import NGramLanguageModel
 import math
-from candidate_generation import generate_candidates_fast
-from error_detection import levenshtein
+from correction.candidate_generation import generate_candidates_fast
+from correction.error_detection import levenshtein
 
 class  ImproveSpellChecker:
     def _init_(self, lm_model: NGramLanguageModel):
@@ -48,8 +48,6 @@ class  ImproveSpellChecker:
                         cand,
                         next_word
                     )
-                    # Score của baseline:
-                    # N-gram context + phạt edit distance
                     score = (
                         math.log(p1)
                         + math.log(p2)
@@ -74,8 +72,6 @@ class  ImproveSpellChecker:
                     a, b = pair
                     confusion_dict.setdefault(a, set()).add(b)
                     confusion_dict.setdefault(b, set()).add(a)
-
-        # Thêm các từ trong confusion set vào candidates nếu chúng có trong vocabulary
         for wrong_part, correct_part in confusion_dict.items():
             if wrong_part not in word:
                 continue

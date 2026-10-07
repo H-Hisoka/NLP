@@ -1,4 +1,4 @@
-from error_detection import levenshtein
+from correction.error_detection import levenshtein
 
 def calculate_top1_accuracy(correct_sentences, predicted_sentences):
     """Tính Top-1 Accuracy cho bài toán sửa lỗi"""
