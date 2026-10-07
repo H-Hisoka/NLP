@@ -1,6 +1,6 @@
 import math
-from candidate_generation import generate_candidates_fast
-from train_language_model import NGramLanguageModel
+from correction.candidate_generation import generate_candidates_fast
+from models.train_language_model import NGramLanguageModel
 
 class BaselineSpellChecker:
     def __init__(self, lm_model: NGramLanguageModel):
@@ -21,8 +21,6 @@ class BaselineSpellChecker:
                 if not candidates:
                     corrected_words.append(word)
                     continue
-
-                # Lấy từ trước và từ sau làm ngữ cảnh.
                 prev_word = (
                     words[i - 1].lower()
                     if i > 0
@@ -41,13 +39,10 @@ class BaselineSpellChecker:
                         prev_word,
                         cand
                     )
-                    # P(next word | candidate)
                     p2 = self.lm.get_bigram_prob(
                         cand,
                         next_word
                     )
-                    # Score của baseline:
-                    # N-gram context + phạt edit distance
                     score = (
                         math.log(p1)
                         + math.log(p2)
