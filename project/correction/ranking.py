@@ -2,6 +2,34 @@ from correction.error_detection import levenshtein
 import math
 from data.preprocessing import tokenize
 from correction.candidate_generation import generate_candidates
+from config import TONE_CONFUSIONS
+
+#kt đầu vào là ký tự
+def checkToken(a,b):
+    if a==b:
+        return 0
+    elif (a,b) in TONE_CONFUSIONS:
+        return 0.5
+    else:
+        return 1
+
+def weighted_edit_distance(a,b,return_matrix=False):
+    n,m=len(a), len(b)
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1):
+        dp[i][0] = i
+    for j in range(m + 1):
+        dp[0][j] = j
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = checkToken(a[i-1],b[i-1])
+            dp[i][j] = min(
+                dp[i - 1][j] + 1,        # delete
+                dp[i][j - 1] + 1,        # insert
+                dp[i - 1][j - 1] + cost  # substitute / match
+            )
+
+        return (dp[n][m], dp) if return_matrix else dp[n][m]
 
 def error_logprob(observed, candidate, alpha=1.7):
     d = levenshtein(candidate, observed)
