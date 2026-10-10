@@ -1,4 +1,4 @@
-from error_detection import levenshtein
+from correction.error_detection import levenshtein
 
 def generate_candidates(observed,
                         vocabulary,
