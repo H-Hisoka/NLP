@@ -22,29 +22,29 @@ def weighted_edit_distance(a,b,return_matrix=False):
         dp[0][j] = j
     for i in range(1, n + 1):
         for j in range(1, m + 1):
-            cost = checkToken(a[i-1],b[i-1])
+            cost = checkToken(a[i-1],b[j-1])
             dp[i][j] = min(
                 dp[i - 1][j] + 1,        # delete
                 dp[i][j - 1] + 1,        # insert
                 dp[i - 1][j - 1] + cost  # substitute / match
             )
 
-        return (dp[n][m], dp) if return_matrix else dp[n][m]
+    return (dp[n][m], dp) if return_matrix else dp[n][m]
 
 def error_logprob(observed, candidate, alpha=1.7):
-    d = levenshtein(candidate, observed)
+    d = weighted_edit_distance(candidate, observed)
     return -alpha * d
 
 def candidate_score(observed,
                     candidate,
-                    left_context,
+                    prev_word,
                     lm,
                     word_freq,
                     alpha=1.7,
                     lm_weight=1.0,
                     freq_weight=0.15):
     err = error_logprob(observed, candidate, alpha=alpha)
-    lm_log = math.log(lm.prob(candidate, left_context) + 1e-15)
+    lm_log = math.log(lm.get_bigram_prob(prev_word, candidate))
     freq_log = math.log(word_freq[candidate] + 1)
 
     total = err + lm_weight * lm_log + freq_weight * freq_log
@@ -53,17 +53,19 @@ def candidate_score(observed,
 def rank_word_candidates(sentence, error_index, lm, max_distance=2, top_k=3):
     tokens = tokenize(sentence)
     observed = tokens[error_index]
+    vocab = lm.vocab
+    word_freq = lm.unigram_counts
 
     cands = generate_candidates(
         observed, vocab, word_freq,
         max_distance=max_distance, top_n=50
     )
 
+    prev_word = tokens[error_index - 1] if error_index > 0 else "<s>"
     rows = []
     for cand, dist, freq in cands:
-        left_context = tokens[max(0, error_index-(lm.n-1)):error_index]
         score = candidate_score(
-            observed, cand, left_context, lm, word_freq
+            observed, cand, prev_word, lm, word_freq
         )
         rows.append((cand, dist, freq, score))
 
