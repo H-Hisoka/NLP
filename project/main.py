@@ -26,7 +26,7 @@ FILE_DU_LIEU = os.path.join(THU_MUC, "dataset.csv")      # cột: stt, wrong, ri
 FILE_CACHE = os.path.join(THU_MUC, "cache_ung_vien.pkl")   # xóa file này nếu sửa code sinh ứng viên
 TI_LE_TRAIN = 0.8
 SEED = 42
-SO_MAU_TEST = 1000          # đặt None để chạy toàn bộ tập test
+SO_MAU_TEST = None        # đặt None để chạy toàn bộ tập test
 NGUONG_REAL_WORD = 8.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
 CAC_NGUONG_THU = [2.0, 5.0, 8.0, 12.0, 16.0]
 
