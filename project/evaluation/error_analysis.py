@@ -10,7 +10,15 @@ error_categories = {
    "Real-word error": [],
    "Sửa nhầm từ vốn đã đúng": []
 }
-
+# Chia nhỏ nhóm "Sai ký tự" theo thao tác của damerau_levenshtein_trace
+nhom_con_sai_ky_tu = {
+   "Thiếu một ký tự": [],
+   "Thiếu nhiều ký tự (viết tắt/teencode)": [],
+   "Thừa ký tự": [],
+   "Đảo ký tự": [],
+   "Nhầm ký tự": [],
+   "Nhiều lỗi cùng lúc": []
+}
 def bo_dau(text):
    """Bỏ hết dấu: 'hoàn' -> 'hoan', 'đúng' -> 'dung'"""
    text = text.replace("đ", "d").replace("Đ", "D")
@@ -29,8 +37,6 @@ def log_error_analysis(original_word, predicted_word, correct_word, category):
            "Target": correct_word
        })
 def tu_phan_loai(original_word, predicted_word, correct_word, vocab):
-      """Đoán nhóm lỗi của một cặp (input, dự đoán, đáp án). Chỉ là gợi ý ban đầu,
-      hai nhóm 'Từ riêng' và 'Từ chuyên ngành' cần bạn xem lại bằng tay."""
       if original_word == correct_word:
           return "Sửa nhầm từ vốn đã đúng"
       if original_word in vocab:
@@ -46,6 +52,34 @@ def tu_phan_loai(original_word, predicted_word, correct_word, vocab):
       if correct_word not in vocab:
           return "Từ riêng"
       return "Sai ký tự"
+def phan_loai_sai_ky_tu(original_word, correct_word):
+   """Chia nhỏ nhóm 'Sai ký tự' dựa vào các thao tác của trace."""
+   thao_tac = lay_thao_tac(original_word, correct_word)
+   loai = {t[0] for t in thao_tac}
+   if loai == {"INSERT"}:
+       if len(thao_tac) == 1:
+           return "Thiếu một ký tự"
+       return "Thiếu nhiều ký tự (viết tắt/teencode)"
+   if loai == {"DELETE"}:
+       return "Thừa ký tự"
+   if loai == {"TRANSPOSE"}:
+       return "Đảo ký tự"
+   if loai == {"SUBSTITUTE"}:
+       return "Nhầm ký tự"
+   return "Nhiều lỗi cùng lúc"
+
+def log_nhom_con(original_word, predicted_word, correct_word, nhom_con):
+   if nhom_con in nhom_con_sai_ky_tu:
+       nhom_con_sai_ky_tu[nhom_con].append({
+           "Input": original_word,
+           "Predict": predicted_word,
+           "Target": correct_word
+       })
+
+def thong_ke_nhom_con():
+   print("--- CHIA NHỎ NHÓM [Sai ký tự] ---")
+   for nhom, logs in nhom_con_sai_ky_tu.items():
+       print(f"  - {nhom}: {len(logs)} mẫu")
 
 def thong_ke_loi():
    print("--- THỐNG KÊ BẢNG PHÂN TÍCH LỖI CHO BÁO CÁO ---")
