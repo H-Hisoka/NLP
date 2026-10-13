@@ -1,4 +1,6 @@
+import hashlib
 import os
+import pickle
 import sys
 
 import pandas as pd
@@ -14,18 +16,22 @@ from models.train_language_model import NGramLanguageModel
 from evaluation.baseline import BaselineSpellChecker
 from models.improved_model import ImproveSpellChecker
 from evaluation.evaluation import evaluate_system
-from evaluation.error_analysis import tu_phan_loai, log_error_analysis, thong_ke_loi
+from evaluation.error_analysis import (
+    tu_phan_loai, log_error_analysis, thong_ke_loi,
+    phan_loai_sai_ky_tu, log_nhom_con, thong_ke_nhom_con,
+)
 from correction.ranking import rank_word_candidates
 
 FILE_DU_LIEU = os.path.join(THU_MUC, "dataset.csv")      # cột: stt, wrong, right
+FILE_CACHE = os.path.join(THU_MUC, "cache_ung_vien.pkl")   # xóa file này nếu sửa code sinh ứng viên
 TI_LE_TRAIN = 0.8
 SEED = 42
-SO_MAU_TEST = 1000          # đặt None để chạy toàn bộ tập test
+SO_MAU_TEST = None        # đặt None để chạy toàn bộ tập test
 NGUONG_REAL_WORD = 8.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
 CAC_NGUONG_THU = [2.0, 5.0, 8.0, 12.0, 16.0]
 
 
-# --- Dữ liệu -----------------------------------------------------------------
+# Dữ liệu 
 def doc_du_lieu(duong_dan=FILE_DU_LIEU):
     df = pd.read_csv(duong_dan, encoding="utf-8-sig")
     df = df.dropna(subset=["wrong", "right"]).copy()
@@ -40,7 +46,33 @@ def chia_train_test(df, ti_le=TI_LE_TRAIN, seed=SEED):
     return df.iloc[:cat], df.iloc[cat:]
 
 
-# --- Đánh giá ----------------------------------------------------------------
+#  Lưu / nạp cache
+def dau_van_tay(checker):
+    """Cache chỉ dùng lại được khi từ vựng và confusion set không đổi."""
+    noi_dung = "\n".join(sorted(checker.lm.vocab))
+    noi_dung += repr(sorted((k, sorted(v)) for k, v in checker.confusion_dict.items()))
+    return hashlib.md5(noi_dung.encode("utf-8")).hexdigest()
+
+
+def nap_cache(checker):
+    if not os.path.exists(FILE_CACHE):
+        return
+    with open(FILE_CACHE, "rb") as f:
+        du_lieu = pickle.load(f)
+    if du_lieu["van_tay"] == dau_van_tay(checker):
+        checker.cache = du_lieu["cache"]
+        print(f"Đã nạp cache ứng viên ({len(checker.cache)} mục)")
+    else:
+        print("Cache cũ không khớp từ vựng / confusion set, bỏ qua.")
+
+
+def luu_cache(checker):
+    with open(FILE_CACHE, "wb") as f:
+        pickle.dump({"van_tay": dau_van_tay(checker), "cache": checker.cache}, f)
+    print(f"\nĐã lưu cache ứng viên ({len(checker.cache)} mục) vào {FILE_CACHE}")
+
+
+#Đánh giá
 def dem_tp_fp_fn(golds, errors, preds):
     """Đếm ở mức từ, chỉ xét các câu có cùng số từ giữa gold / error / pred."""
     TP = FP = FN = 0
@@ -89,7 +121,7 @@ def danh_gia_improved(ten, checker, test_df, nguong, in_kq=True):
     return kq
 
 
-# --- Phân tích lỗi -----------------------------------------------------------
+# Phân tích lỗi
 def phan_tich_loi(lm, checker, test_df, nguong, so_mau_in=30):
     """Ghi lỗi thật của mô hình vào error_analysis, in thống kê và các mẫu."""
     cac_loi = []
@@ -102,9 +134,15 @@ def phan_tich_loi(lm, checker, test_df, nguong, so_mau_in=30):
             if pw != gw:
                 nhom = tu_phan_loai(ww, pw, gw, lm.vocab)
                 log_error_analysis(ww, pw, gw, nhom)
+                if nhom == "Sai ký tự":
+                    nhom_con = phan_loai_sai_ky_tu(ww, gw)
+                    log_nhom_con(ww, pw, gw, nhom_con)
+                    nhom = f"{nhom} - {nhom_con}"
                 cac_loi.append((ww, pw, gw, nhom))
     print("\n")
     thong_ke_loi()
+    print()
+    thong_ke_nhom_con()
     print(f"\n--- {so_mau_in} LỖI MẪU (input -> dự đoán | đáp án | nhóm) ---")
     for ww, pw, gw, nhom in cac_loi[:so_mau_in]:
         print(f"{ww} -> {pw} | {gw} | {nhom}")
@@ -140,6 +178,7 @@ def main():
 
     baseline = BaselineSpellChecker(lm)
     improved = ImproveSpellChecker(lm)
+    nap_cache(improved)
 
     danh_gia_baseline(baseline, test_df)
     danh_gia_improved("IMPROVED (confusion set, chưa real-word)", improved, test_df, None)
@@ -158,6 +197,7 @@ def main():
     cau_mau = ["sinh viên cần hoàn thành bai tập", "tôi muốn ăn cơm răng"]
     cau_mau += test_df["wrong"].head(2).tolist()
     thu_cau_mau(lm, improved, cau_mau, NGUONG_REAL_WORD)
+    luu_cache(improved)
 
 
 if __name__ == "__main__":
