@@ -10,61 +10,61 @@ class  ImproveSpellChecker:
         self.lm = lm_model
         self.confusion_dict = self.load_confusion_set(CONFUSION_SET)
         self.cache = {}
-    def load_confusion_set(self, duong_dan):
-        with open(duong_dan, "r", encoding="utf-8") as f:
-            cay = ast.parse(f.read())
-        nut_dict = next(n for n in ast.walk(cay) if isinstance(n, ast.Dict))
-        ket_qua = {}
-        for k, v in zip(nut_dict.keys, nut_dict.values):
-            ket_qua.setdefault(ast.literal_eval(k), set()).update(ast.literal_eval(v))
-        return ket_qua
-    def goi_y_cho_tu(self, words, i, k=3, nguong=8.0):
+    def load_confusion_set(self, file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        dict_node = next(n for n in ast.walk(tree) if isinstance(n, ast.Dict))
+        result = {}
+        for k, v in zip(dict_node.keys, dict_node.values):
+            result.setdefault(ast.literal_eval(k), set()).update(ast.literal_eval(v))
+        return result
+    def suggest_word_candidates(self, words, i, k=3, threshold=8.0):
         """Trả về tối đa k ứng viên cho words[i].
         Nếu từ không bị nghi sai thì trả về [từ gốc]."""
         word = words[i]
-        tu = word.lower()
+        word_lower = word.lower()
         if not word.isalpha():
             return [word]
         prev_word = words[i - 1].lower() if i > 0 else "<s>"
         next_word = words[i + 1].lower() if i < len(words) - 1 else "</s>"
 
-        if tu not in self.lm.vocab:
-            khoang_cach = 2
-        elif nguong is None:
+        if word_lower not in self.lm.vocab:
+            max_distance = 2
+        elif threshold is None:
             return [word]
         else:
-            khoang_cach = 1
+            max_distance = 1
 
-        khoa = (tu, khoang_cach)
-        if khoa not in self.cache:
-            self.cache[khoa] = (
+        cache_key = (word_lower, max_distance)
+        if cache_key not in self.cache:
+            self.cache[cache_key] = (
                 generate_candidates_fast(
-                    tu, self.lm.vocab, self.lm.unigram_counts,
-                    max_distance=khoang_cach, top_n=20
+                    word_lower, self.lm.vocab, self.lm.unigram_counts,
+                    max_distance=max_distance, top_n=20
                 ),
-                self.get_confusion_candidates(tu, self.lm.vocab)
+                self.get_confusion_candidates(word_lower, self.lm.vocab)
             )
-        distance_candidates, confusion_candidates = self.cache[khoa]
+        distance_candidates, confusion_candidates = self.cache[cache_key]
         if not distance_candidates and not confusion_candidates:
             return [word]
 
         scored = self.score(
-            tu, distance_candidates, confusion_candidates, prev_word, next_word
+            word_lower, distance_candidates, confusion_candidates, prev_word, next_word
         )
 
-        if tu in self.lm.vocab:
+        if word_lower in self.lm.vocab:
             # Real-word error: chỉ đổi khi ứng viên tốt hơn từ gốc đủ nhiều
-            diem_goc = dict(scored)[tu]
-            if scored[0][0] == tu or scored[0][1] - diem_goc <= nguong:
+            original_score = dict(scored)[word_lower]
+            if scored[0][0] == word_lower or scored[0][1] - original_score <= threshold:
                 return [word]
         return [c for c, _ in scored[:k]]
-    def correct_sentence_top_k(self, sentence: str, k=3, nguong=8.0):
+    def correct_sentence_top_k(self, sentence: str, k=3, threshold=8.0):
         words = sentence.split()
-        return [self.goi_y_cho_tu(words, i, k, nguong) for i in range(len(words))]
+        return [self.suggest_word_candidates(words, i, k, threshold) for i in range(len(words))]
 
-    def correct_sentence(self, sentence: str, nguong=8.0):
-        goi_y = self.correct_sentence_top_k(sentence, 1, nguong)
-        return " ".join(g[0] for g in goi_y)
+    def correct_sentence(self, sentence: str, threshold=8.0):
+        suggestions = self.correct_sentence_top_k(sentence, 1, threshold)
+        return " ".join(g[0] for g in suggestions)
  
     def get_confusion_candidates(self, word, vocabulary):
         candidates = set()

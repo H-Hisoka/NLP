@@ -1,7 +1,7 @@
 import os
 CONFUSION_SET = os.path.join(os.path.dirname(os.path.abspath(__file__)), "confusion_set.txt")
 
-DANH_SACH_LOI = [
+ERROR_TYPES = [
     "missing_character",
     "extra_character",
     "duplicate_character",
@@ -34,7 +34,7 @@ DANH_SACH_LOI = [
     "email_error"
 ]
 
-EMOIJI_LIST = [
+EMOJI_LIST = [
     "😂", "😢", "😡", "❤️", "😱"
 ]
 
@@ -60,7 +60,7 @@ PUNCTUATION=[
     
 ]
 
-NGUYEN_AM = {
+VOWELS = {
     "a": "aàáảãạ", "ă": "ăằắẳẵặ", "â": "âầấẩẫậ",
     "e": "eèéẻẽẹ", "ê": "êềếểễệ", "i": "iìíỉĩị",
     "o": "oòóỏõọ", "ô": "ôồốổỗộ", "ơ": "ơờớởỡợ",
@@ -70,9 +70,9 @@ NGUYEN_AM = {
 # Các cặp ký tự chỉ khác nhau về dấu thanh (kể cả không dấu), tính cả hai chiều
 TONE_CONFUSIONS = {
     (x, y)
-    for nhom in NGUYEN_AM.values()
-    for x in nhom
-    for y in nhom
+    for group in VOWELS.values()
+    for x in group
+    for y in group
     if x != y
 }
 TONE_CONFUSIONS |= {("d", "đ"), ("đ", "d")}

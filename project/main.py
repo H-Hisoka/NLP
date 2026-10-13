@@ -8,8 +8,8 @@ import pandas as pd
 # Để in tiếng Việt được cả khi chạy bằng nút Run / Code Runner trên Windows
 sys.stdout.reconfigure(encoding="utf-8")
 
-THU_MUC = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, THU_MUC)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
 
 from data.preprocessing import normalize_text
 from models.train_language_model import NGramLanguageModel
@@ -17,63 +17,63 @@ from evaluation.baseline import BaselineSpellChecker
 from models.improved_model import ImproveSpellChecker
 from evaluation.evaluation import evaluate_system
 from evaluation.error_analysis import (
-    tu_phan_loai, log_error_analysis, thong_ke_loi,
-    phan_loai_sai_ky_tu, log_nhom_con, thong_ke_nhom_con,
+    classify_word, log_error_analysis, print_error_statistics,
+    classify_character_error, log_sub_error, print_sub_error_statistics,
 )
 from correction.ranking import rank_word_candidates
 
-FILE_DU_LIEU = os.path.join(THU_MUC, "dataset.csv")      # cột: stt, wrong, right
-FILE_CACHE = os.path.join(THU_MUC, "cache_ung_vien.pkl")   # xóa file này nếu sửa code sinh ứng viên
-TI_LE_TRAIN = 0.8
+DATA_FILE = os.path.join(BASE_DIR, "dataset.csv")      # cột: stt, wrong, right
+CACHE_FILE = os.path.join(BASE_DIR, "cache_ung_vien.pkl")   # xóa file này nếu sửa code sinh ứng viên
+TRAIN_RATIO = 0.8
 SEED = 42
-SO_MAU_TEST = None        # đặt None để chạy toàn bộ tập test
-NGUONG_REAL_WORD = 8.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
-CAC_NGUONG_THU = [2.0, 5.0, 8.0, 12.0, 16.0]
+TEST_SAMPLE_SIZE = None        # đặt None để chạy toàn bộ tập test
+REAL_WORD_THRESHOLD = 8.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
+THRESHOLD_VALUES = [2.0, 5.0, 8.0, 12.0, 16.0]
 
 
 # Dữ liệu 
-def doc_du_lieu(duong_dan=FILE_DU_LIEU):
-    df = pd.read_csv(duong_dan, encoding="utf-8-sig")
+def load_data(file_path=DATA_FILE):
+    df = pd.read_csv(file_path, encoding="utf-8-sig")
     df = df.dropna(subset=["wrong", "right"]).copy()
     df["wrong_norm"] = df["wrong"].apply(normalize_text)
     df["right_norm"] = df["right"].apply(normalize_text)
     return df[(df["wrong_norm"] != "") & (df["right_norm"] != "")]
 
 
-def chia_train_test(df, ti_le=TI_LE_TRAIN, seed=SEED):
+def split_train_test(df, ratio=TRAIN_RATIO, seed=SEED):
     df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
-    cat = int(len(df) * ti_le)
-    return df.iloc[:cat], df.iloc[cat:]
+    split_index = int(len(df) * ratio)
+    return df.iloc[:split_index], df.iloc[split_index:]
 
 
 #  Lưu / nạp cache
-def dau_van_tay(checker):
+def generate_fingerprint(checker):
     """Cache chỉ dùng lại được khi từ vựng và confusion set không đổi."""
-    noi_dung = "\n".join(sorted(checker.lm.vocab))
-    noi_dung += repr(sorted((k, sorted(v)) for k, v in checker.confusion_dict.items()))
-    return hashlib.md5(noi_dung.encode("utf-8")).hexdigest()
+    content = "\n".join(sorted(checker.lm.vocab))
+    content += repr(sorted((k, sorted(v)) for k, v in checker.confusion_dict.items()))
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
 
 
-def nap_cache(checker):
-    if not os.path.exists(FILE_CACHE):
+def load_cache(checker):
+    if not os.path.exists(CACHE_FILE):
         return
-    with open(FILE_CACHE, "rb") as f:
-        du_lieu = pickle.load(f)
-    if du_lieu["van_tay"] == dau_van_tay(checker):
-        checker.cache = du_lieu["cache"]
+    with open(CACHE_FILE, "rb") as f:
+        cache_data = pickle.load(f)
+    if cache_data["van_tay"] == generate_fingerprint(checker):
+        checker.cache = cache_data["cache"]
         print(f"Đã nạp cache ứng viên ({len(checker.cache)} mục)")
     else:
         print("Cache cũ không khớp từ vựng / confusion set, bỏ qua.")
 
 
-def luu_cache(checker):
-    with open(FILE_CACHE, "wb") as f:
-        pickle.dump({"van_tay": dau_van_tay(checker), "cache": checker.cache}, f)
-    print(f"\nĐã lưu cache ứng viên ({len(checker.cache)} mục) vào {FILE_CACHE}")
+def save_cache(checker):
+    with open(CACHE_FILE, "wb") as f:
+        pickle.dump({"van_tay": generate_fingerprint(checker), "cache": checker.cache}, f)
+    print(f"\nĐã lưu cache ứng viên ({len(checker.cache)} mục) vào {CACHE_FILE}")
 
 
 #Đánh giá
-def dem_tp_fp_fn(golds, errors, preds):
+def calculate_tp_fp_fn(golds, errors, preds):
     """Đếm ở mức từ, chỉ xét các câu có cùng số từ giữa gold / error / pred."""
     TP = FP = FN = 0
     for gold, err, pred in zip(golds, errors, preds):
@@ -91,85 +91,85 @@ def dem_tp_fp_fn(golds, errors, preds):
     return TP, FP, FN
 
 
-def in_ket_qua(ten, kq):
-    print(f"\n=== {ten} ===")
-    for k, v in kq.items():
+def print_results(name, results):
+    print(f"\n=== {name} ===")
+    for k, v in results.items():
         print(f"{k:>15}: {v:.4f}")
 
 
-def danh_gia_baseline(checker, test_df):
+def evaluate_baseline(checker, test_df):
     """BaselineSpellChecker chỉ trả về top-1 nên top-3 = top-1."""
     errors = test_df["wrong_norm"].tolist()
     golds = test_df["right_norm"].tolist()
     preds = [checker.correct_sentence(s) for s in errors]
-    TP, FP, FN = dem_tp_fp_fn(golds, errors, preds)
-    kq = evaluate_system(preds, golds, preds, TP, FP, FN)
-    in_ket_qua("BASELINE (edit distance + bigram)", kq)
-    return kq
+    TP, FP, FN = calculate_tp_fp_fn(golds, errors, preds)
+    results = evaluate_system(preds, golds, preds, TP, FP, FN)
+    print_results("BASELINE (edit distance + bigram)", results)
+    return results
 
 
-def danh_gia_improved(ten, checker, test_df, nguong, in_kq=True):
+def evaluate_improved(name, checker, test_df, threshold, print_results_flag=True):
     errors = test_df["wrong_norm"].tolist()
     golds = test_df["right_norm"].tolist()
-    ds_goi_y = [checker.correct_sentence_top_k(s, 3, nguong) for s in errors]
-    top1 = [" ".join(g[0] for g in goi_y) for goi_y in ds_goi_y]
-    top3 = [" ".join("|".join(g) for g in goi_y) for goi_y in ds_goi_y]
-    TP, FP, FN = dem_tp_fp_fn(golds, errors, top1)
-    kq = evaluate_system(top1, golds, top3, TP, FP, FN)
-    if in_kq:
-        in_ket_qua(ten, kq)
-    return kq
+    suggestions = [checker.correct_sentence_top_k(s, 3, threshold) for s in errors]
+    top1 = [" ".join(g[0] for g in suggestions) for suggestions in suggestions]
+    top3 = [" ".join("|".join(g) for g in suggestions) for suggestions in suggestions]
+    TP, FP, FN = calculate_tp_fp_fn(golds, errors, top1)
+    results = evaluate_system(top1, golds, top3, TP, FP, FN)
+    if print_results_flag:
+        print_results(name, results)
+    return results
 
 
 # Phân tích lỗi
-def phan_tich_loi(lm, checker, test_df, nguong, so_mau_in=30):
+def analyze_errors(lm, checker, test_df, threshold, num_samples_to_print=30):
     """Ghi lỗi thật của mô hình vào error_analysis, in thống kê và các mẫu."""
-    cac_loi = []
+    errors_found = []
     for wrong, right in zip(test_df["wrong_norm"], test_df["right_norm"]):
-        pred = checker.correct_sentence(wrong, nguong)
+        pred = checker.correct_sentence(wrong, threshold)
         w, g, p = wrong.split(), right.split(), pred.split()
         if not (len(w) == len(g) == len(p)):
             continue
         for ww, gw, pw in zip(w, g, p):
             if pw != gw:
-                nhom = tu_phan_loai(ww, pw, gw, lm.vocab)
-                log_error_analysis(ww, pw, gw, nhom)
-                if nhom == "Sai ký tự":
-                    nhom_con = phan_loai_sai_ky_tu(ww, gw)
-                    log_nhom_con(ww, pw, gw, nhom_con)
-                    nhom = f"{nhom} - {nhom_con}"
-                cac_loi.append((ww, pw, gw, nhom))
+                category = classify_word(ww, pw, gw, lm.vocab)
+                log_error_analysis(ww, pw, gw, category)
+                if category == "Sai ký tự":
+                    sub_category = classify_character_error(ww, gw)
+                    log_sub_error(ww, pw, gw, sub_category)
+                    category = f"{category} - {sub_category}"
+                errors_found.append((ww, pw, gw, category))
     print("\n")
-    thong_ke_loi()
+    print_error_statistics()
     print()
-    thong_ke_nhom_con()
-    print(f"\n--- {so_mau_in} LỖI MẪU (input -> dự đoán | đáp án | nhóm) ---")
-    for ww, pw, gw, nhom in cac_loi[:so_mau_in]:
-        print(f"{ww} -> {pw} | {gw} | {nhom}")
+    print_sub_error_statistics()
+    print(f"\n--- {num_samples_to_print} LỖI MẪU (input -> dự đoán | đáp án | nhóm) ---")
+    for ww, pw, gw, category in errors_found[:num_samples_to_print]:
+        print(f"{ww} -> {pw} | {gw} | {category}")
 
 
-def thu_cau_mau(lm, checker, cac_cau, nguong):
+def test_sample_sentences(lm, checker, sentences, threshold):
     print("\n=== THỬ CÂU MẪU ===")
-    for cau in cac_cau:
-        c = normalize_text(cau)
+    for sentence in sentences:
+        c = normalize_text(sentence)
         tokens = c.split()
-        goi_y = checker.correct_sentence_top_k(c, 3, nguong)
+        goi_y = checker.correct_sentence_top_k(c, 3, threshold)
         print(f"\nInput: {c}")
         print("Top-1: " + " ".join(g[0] for g in goi_y))
-        for tu, g in zip(tokens, goi_y):
-            if g != [tu]:
-                print(f"  '{tu}' nghi sai -> {g}")
-        for idx, tu in enumerate(tokens):
-            if tu not in lm.vocab:
+        for word, g in zip(tokens, goi_y):
+            if g != [word]:
+                print(f"  '{word}' nghi sai -> {g}")
+        for idx, word in enumerate(tokens):
+            if word not in lm.vocab:
                 print("  ranking.py:", rank_word_candidates(c, idx, lm)[:3])
                 break
 
 
 def main():
-    df = doc_du_lieu()
-    train_df, test_df = chia_train_test(df)
-    if SO_MAU_TEST:
-        test_df = test_df.head(SO_MAU_TEST)
+    df = load_data()
+    train_df, test_df = split_train_test(df)
+    if TEST_SAMPLE_SIZE:
+        test_df = test_df.head(TEST_SAMPLE_SIZE)
     print(f"Tổng: {len(df)} | train: {len(train_df)} | test: {len(test_df)}")
 
     lm = NGramLanguageModel()
@@ -178,26 +178,26 @@ def main():
 
     baseline = BaselineSpellChecker(lm)
     improved = ImproveSpellChecker(lm)
-    nap_cache(improved)
+    load_cache(improved)
 
-    danh_gia_baseline(baseline, test_df)
-    danh_gia_improved("IMPROVED (confusion set, chưa real-word)", improved, test_df, None)
-    danh_gia_improved(f"IMPROVED + REAL-WORD (ngưỡng {NGUONG_REAL_WORD})",
-                      improved, test_df, NGUONG_REAL_WORD)
+    evaluate_baseline(baseline, test_df)
+    evaluate_improved("IMPROVED (confusion set, chưa real-word)", improved, test_df, None)
+    evaluate_improved(f"IMPROVED + REAL-WORD (ngưỡng {REAL_WORD_THRESHOLD})",
+                      improved, test_df, REAL_WORD_THRESHOLD)
 
     print("\n=== THỬ NGƯỠNG REAL-WORD ===")
     print(f"{'ngưỡng':>7} {'precision':>10} {'recall':>8} {'f1':>8} {'top1':>8} {'top3':>8} {'exact':>8}")
-    for ng in CAC_NGUONG_THU:
-        kq = danh_gia_improved("", improved, test_df, ng, in_kq=False)
-        print(f"{ng:>7} {kq['precision']:>10.4f} {kq['recall']:>8.4f} {kq['f1']:>8.4f} "
-              f"{kq['top1_accuracy']:>8.4f} {kq['top3_accuracy']:>8.4f} {kq['exact_match']:>8.4f}")
+    for ng in THRESHOLD_VALUES:
+        results = evaluate_improved("", improved, test_df, ng, print_results_flag=False)
+        print(f"{ng:>7} {results['precision']:>10.4f} {results['recall']:>8.4f} {results['f1']:>8.4f} "
+              f"{results['top1_accuracy']:>8.4f} {results['top3_accuracy']:>8.4f} {results['exact_match']:>8.4f}")
 
-    phan_tich_loi(lm, improved, test_df, NGUONG_REAL_WORD)
+    analyze_errors(lm, improved, test_df, REAL_WORD_THRESHOLD)
 
-    cau_mau = ["sinh viên cần hoàn thành bai tập", "tôi muốn ăn cơm răng"]
-    cau_mau += test_df["wrong"].head(2).tolist()
-    thu_cau_mau(lm, improved, cau_mau, NGUONG_REAL_WORD)
-    luu_cache(improved)
+    sample_sentences = ["sinh viên cần hoàn thành bai tập", "tôi muốn ăn cơm răng"]
+    sample_sentences += test_df["wrong"].head(2).tolist()
+    test_sample_sentences(lm, improved, sample_sentences, REAL_WORD_THRESHOLD)
+    save_cache(improved)
 
 
 if __name__ == "__main__":
