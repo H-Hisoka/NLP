@@ -13,7 +13,6 @@ import sys
 import unicodedata
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-
 import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

@@ -1,6 +1,9 @@
 import unicodedata
 from correction.error_detection import damerau_levenshtein_trace
 from config import TONE_CONFUSIONS
+from data.preprocessing import normalize_text
+from correction.ranking import rank_word_candidates
+
 error_categories = {
    "Sai dấu": [],
    "Sai ký tự": [],
@@ -85,3 +88,46 @@ def print_error_statistics():
    print("--- THỐNG KÊ BẢNG PHÂN TÍCH LỖI CHO BÁO CÁO ---")
    for cat, logs in error_categories.items():
        print(f"* Nhóm [{cat}]: {len(logs)} mẫu lỗi")
+
+# Phân tích lỗi
+def analyze_errors(lm, checker, test_df, threshold, num_samples_to_print=30):
+    """Ghi lỗi thật của mô hình vào error_analysis, in thống kê và các mẫu."""
+    errors_found = []
+    for wrong, right in zip(test_df["wrong_norm"], test_df["right_norm"]):
+        pred = checker.correct_sentence(wrong, threshold)
+        w, g, p = wrong.split(), right.split(), pred.split()
+        if not (len(w) == len(g) == len(p)):
+            continue
+        for ww, gw, pw in zip(w, g, p):
+            if pw != gw:
+                category = classify_word(ww, pw, gw, lm.vocab)
+                log_error_analysis(ww, pw, gw, category)
+                if category == "Sai ký tự":
+                    sub_category = classify_character_error(ww, gw)
+                    log_sub_error(ww, pw, gw, sub_category)
+                    category = f"{category} - {sub_category}"
+                errors_found.append((ww, pw, gw, category))
+    print("\n")
+    print_error_statistics()
+    print()
+    print_sub_error_statistics()
+    print(f"\n--- {num_samples_to_print} LỖI MẪU (input -> dự đoán | đáp án | nhóm) ---")
+    for ww, pw, gw, category in errors_found[:num_samples_to_print]:
+        print(f"{ww} -> {pw} | {gw} | {category}")
+
+
+def show_sample_predictions(lm, checker, sentences, threshold):
+    print("\n=== THỬ CÂU MẪU ===")
+    for sentence in sentences:
+        c = normalize_text(sentence)
+        tokens = c.split()
+        goi_y = checker.correct_sentence_top_k(c, 3, threshold)
+        print(f"\nInput: {c}")
+        print("Top-1: " + " ".join(g[0] for g in goi_y))
+        for word, g in zip(tokens, goi_y):
+            if g != [word]:
+                print(f"  '{word}' nghi sai -> {g}")
+        for idx, word in enumerate(tokens):
+            if word not in lm.vocab:
+                print("  ranking.py:", rank_word_candidates(c, idx, lm)[:3])
+                break

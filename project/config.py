@@ -75,4 +75,14 @@ TONE_CONFUSIONS = {
     for y in group
     if x != y
 }
-TONE_CONFUSIONS |= {("d", "đ"), ("đ", "d")}
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFUSION_SET = os.path.join(BASE_DIR, "confusion_set.txt")
+
+DATA_FILE = os.path.join(BASE_DIR, "dataset.csv")      # cột: stt, wrong, right
+CACHE_FILE = os.path.join(BASE_DIR, "cache_ung_vien.pkl")   # xóa file này nếu sửa code sinh ứng viên
+TRAIN_RATIO = 0.8
+SEED = 42
+TEST_SAMPLE_SIZE = None        # đặt None để chạy toàn bộ tập test
+REAL_WORD_THRESHOLD = 8.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
+THRESHOLD_VALUES = [2.0, 5.0, 8.0, 12.0, 16.0]

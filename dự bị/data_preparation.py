@@ -1,34 +1,34 @@
 import pandas as pd
 import os
 import random
-from config import DANH_SACH_LOI
+from config import ERROR_TYPES
 
 
-def tao_loi(text, loai_loi):
+def generate_error(text, error_type):
 
     if not isinstance(text, str):
         return text
 
     # 1. Thiếu ký tự
-    if loai_loi == "missing_character":
+    if error_type == "missing_character":
         if len(text) > 1:
             pos = random.randint(0, len(text) - 1)
             return text[:pos] + text[pos + 1:]
 
     # 2. Thừa ký tự
-    elif loai_loi == "extra_character":
+    elif error_type == "extra_character":
         if len(text) > 0:
             pos = random.randint(0, len(text) - 1)
             return text[:pos] + text[pos] + text[pos:]
 
     # 3. Lặp ký tự
-    elif loai_loi == "duplicate_character":
+    elif error_type == "duplicate_character":
         if len(text) > 0:
             pos = random.randint(0, len(text) - 1)
             return text[:pos] + text[pos] + text[pos + 1:]
 
     # 4. Đảo vị trí ký tự
-    elif loai_loi == "swap_character":
+    elif error_type == "swap_character":
         chars = list(text)
 
         if len(chars) >= 2:
@@ -38,7 +38,7 @@ def tao_loi(text, loai_loi):
         return "".join(chars)
 
     # 5. Viết hoa sai
-    elif loai_loi == "wrong_capitalization":
+    elif error_type == "wrong_capitalization":
         words = text.split()
 
         if len(words) > 0:
@@ -48,11 +48,11 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 6. Viết thường
-    elif loai_loi == "wrong_lowercase":
+    elif error_type == "wrong_lowercase":
         return text.lower()
 
     # 7. Thiếu khoảng trắng
-    elif loai_loi == "missing_space":
+    elif error_type == "missing_space":
         words = text.split()
 
         if len(words) >= 2:
@@ -63,7 +63,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 8. Thừa khoảng trắng
-    elif loai_loi == "extra_space":
+    elif error_type == "extra_space":
         words = text.split()
 
         if len(words) > 0:
@@ -73,7 +73,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 9. Lặp từ
-    elif loai_loi == "duplicate_word":
+    elif error_type == "duplicate_word":
         words = text.split()
 
         if len(words) > 0:
@@ -83,7 +83,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 10. Thiếu từ
-    elif loai_loi == "missing_word":
+    elif error_type == "missing_word":
         words = text.split()
 
         if len(words) > 1:
@@ -93,7 +93,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 11. Đảo vị trí từ
-    elif loai_loi == "swap_word":
+    elif error_type == "swap_word":
         words = text.split()
 
         if len(words) >= 2:
@@ -103,7 +103,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 12. Sai dấu câu
-    elif loai_loi == "wrong_punctuation":
+    elif error_type == "wrong_punctuation":
         if text.endswith("."):
             return text[:-1] + "!"
         elif text.endswith("!"):
@@ -112,19 +112,19 @@ def tao_loi(text, loai_loi):
             return text + "!"
 
     # 13. Thiếu dấu câu
-    elif loai_loi == "missing_punctuation":
+    elif error_type == "missing_punctuation":
         return text.replace(".", "").replace(",", "")
 
     # 14. Thừa dấu câu
-    elif loai_loi == "extra_punctuation":
+    elif error_type == "extra_punctuation":
         return text + "!"
 
     # 15. Lặp dấu câu
-    elif loai_loi == "duplicate_punctuation":
+    elif error_type == "duplicate_punctuation":
         return text + "..."
 
     # 16. Sai chính tả
-    elif loai_loi == "spelling_error":
+    elif error_type == "spelling_error":
         words = text.split()
 
         if len(words) > 0:
@@ -143,7 +143,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 17. Đảo toàn bộ thứ tự từ
-    elif loai_loi == "word_order":
+    elif error_type == "word_order":
         words = text.split()
 
         if len(words) >= 2:
@@ -152,7 +152,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 18. Thay thế từ
-    elif loai_loi == "word_replacement":
+    elif error_type == "word_replacement":
         words = text.split()
 
         if len(words) > 0:
@@ -162,7 +162,7 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 19. Chèn từ
-    elif loai_loi == "word_insertion":
+    elif error_type == "word_insertion":
         words = text.split()
 
         pos = random.randint(0, len(words))
@@ -171,11 +171,11 @@ def tao_loi(text, loai_loi):
         return " ".join(words)
 
     # 20. Ký tự không hợp lệ
-    elif loai_loi == "invalid_character":
+    elif error_type == "invalid_character":
         return text + " @#$"
 
     # 21. Emoji sai
-    elif loai_loi == "wrong_emoji":
+    elif error_type == "wrong_emoji":
         emojis = ["😂", "😢", "😡", "❤️", "😱"]
 
         for emoji in emojis:
@@ -186,7 +186,7 @@ def tao_loi(text, loai_loi):
                 return text.replace(emoji, wrong_emoji, 1)
 
     # 22. Thiếu emoji
-    elif loai_loi == "missing_emoji":
+    elif error_type == "missing_emoji":
         return (
             text.replace("😊", "")
                 .replace("😂", "")
@@ -195,11 +195,11 @@ def tao_loi(text, loai_loi):
         )
 
     # 23. Lặp emoji
-    elif loai_loi == "duplicate_emoji":
+    elif error_type == "duplicate_emoji":
         return text + " 😊😊"
 
     # 24. Teencode
-    elif loai_loi == "teencode":
+    elif error_type == "teencode":
         replacements = {
             "không": "ko",
             "mình": "mk",
@@ -217,7 +217,7 @@ def tao_loi(text, loai_loi):
         return text
 
     # 25. Viết tắt
-    elif loai_loi == "abbreviation":
+    elif error_type == "abbreviation":
         replacements = {
             "không": "ko",
             "và": "&",
@@ -231,7 +231,7 @@ def tao_loi(text, loai_loi):
         return text
 
     # 26. Code switching
-    elif loai_loi == "code_switching":
+    elif error_type == "code_switching":
         words = text.split()
         if len(words) >= 2:
             pos = random.randint(1, len(words) - 1)
@@ -248,39 +248,39 @@ def tao_loi(text, loai_loi):
         return text
 
     # 27. Lỗi Unicode
-    elif loai_loi == "unicode_error":
+    elif error_type == "unicode_error":
         return (
             text.replace("đ", "d")
                 .replace("Đ", "D")
         )
 
     # 28. Khoảng trắng đầu/cuối
-    elif loai_loi == "leading_trailing_space":
+    elif error_type == "leading_trailing_space":
         return "   " + text + "   "
 
     # 29. Lỗi URL
-    elif loai_loi == "url_error":
+    elif error_type == "url_error":
         return text + " https//example.com"
 
     # 30. Lỗi Email
-    elif loai_loi == "email_error":
+    elif error_type == "email_error":
         return text + " example@gmail"
 
     return text
 
 # đọc dulieu.csv tạo file mới
 
-def tao_file_loi():
+def generate_error_file():
 
     # Đường dẫn đến dulieu.csv
-    duong_dan = os.path.join(
+    file_path = os.path.join(
         os.path.dirname(__file__),
         "dulieu.csv"
     )
 
     # Đọc file CSV
     df = pd.read_csv(
-        duong_dan,
+        file_path,
         encoding="utf-8-sig"
     )
 
@@ -308,7 +308,7 @@ def tao_file_loi():
         # Tạo 30 loại lỗi
         for loai_loi in DANH_SACH_LOI:
 
-            error_text = tao_loi(
+            error_text = generate_error(
                 correct_text,
                 loai_loi
             )
@@ -338,4 +338,4 @@ def tao_file_loi():
         error_df["error_type"].nunique()
     )
 
-tao_file_loi()
+generate_error_file()

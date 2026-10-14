@@ -144,3 +144,53 @@ def evaluate_system(
         "exact_match": exact_match
     }    
 
+
+#Đánh giá
+def calculate_tp_fp_fn(golds, errors, preds):
+    """Đếm ở mức từ, chỉ xét các câu có cùng số từ giữa gold / error / pred."""
+    TP = FP = FN = 0
+    for gold, err, pred in zip(golds, errors, preds):
+        g, e, p = gold.split(), err.split(), pred.split()
+        if not (len(g) == len(e) == len(p)):
+            continue
+        for gw, ew, pw in zip(g, e, p):
+            if ew != gw:
+                if pw == gw:
+                    TP += 1
+                else:
+                    FN += 1
+            elif pw != gw:
+                FP += 1
+    return TP, FP, FN
+
+
+def print_results(name, results):
+    print(f"\n=== {name} ===")
+    for k, v in results.items():
+        print(f"{k:>15}: {v:.4f}")
+
+
+def evaluate_baseline(checker, test_df):
+    """BaselineSpellChecker chỉ trả về top-1 nên top-3 = top-1."""
+    errors = test_df["wrong_norm"].tolist()
+    golds = test_df["right_norm"].tolist()
+    preds = [checker.correct_sentence(s) for s in errors]
+    TP, FP, FN = calculate_tp_fp_fn(golds, errors, preds)
+    results = evaluate_system(preds, golds, preds, TP, FP, FN)
+    print_results("BASELINE (edit distance + bigram)", results)
+    return results
+
+
+def evaluate_improved(name, checker, test_df, threshold, print_results_flag=True):
+    errors = test_df["wrong_norm"].tolist()
+    golds = test_df["right_norm"].tolist()
+    all_suggestions = [checker.correct_sentence_top_k(s, 3, threshold) for s in errors]
+    top1 = [" ".join(g[0] for g in suggestions) for suggestions in all_suggestions]
+    top3 = [" ".join("|".join(g) for g in suggestions) for suggestions in all_suggestions]
+    TP, FP, FN = calculate_tp_fp_fn(golds, errors, top1)
+    results = evaluate_system(top1, golds, top3, TP, FP, FN)
+    if print_results_flag:
+        print_results(name, results)
+    return results
+
+

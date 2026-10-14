@@ -1,10 +1,12 @@
 import ast
-from config import CONFUSION_SET
+from config import CONFUSION_SET, CACHE_FILE
 from evaluation.baseline import NGramLanguageModel
 import math
 from correction.candidate_generation import generate_candidates_fast
 from correction.error_detection import levenshtein
-
+import hashlib
+import os
+import pickle
 class  ImproveSpellChecker:
     def __init__(self, lm_model: NGramLanguageModel):
         self.lm = lm_model
@@ -107,6 +109,30 @@ class  ImproveSpellChecker:
         return scored_candidates
 
 
+#  Lưu / nạp cache
+def generate_fingerprint(checker):
+    """Cache chỉ dùng lại được khi từ vựng và confusion set không đổi."""
+    content = "\n".join(sorted(checker.lm.vocab))
+    content += repr(sorted((k, sorted(v)) for k, v in checker.confusion_dict.items()))
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
+
+
+def load_cache(checker):
+    if not os.path.exists(CACHE_FILE):
+        return
+    with open(CACHE_FILE, "rb") as f:
+        cache_data = pickle.load(f)
+    if cache_data["van_tay"] == generate_fingerprint(checker):
+        checker.cache = cache_data["cache"]
+        print(f"Đã nạp cache ứng viên ({len(checker.cache)} mục)")
+    else:
+        print("Cache cũ không khớp từ vựng / confusion set, bỏ qua.")
+
+
+def save_cache(checker):
+    with open(CACHE_FILE, "wb") as f:
+        pickle.dump({"van_tay": generate_fingerprint(checker), "cache": checker.cache}, f)
+    print(f"\nĐã lưu cache ứng viên ({len(checker.cache)} mục) vào {CACHE_FILE}")
 
 
     
