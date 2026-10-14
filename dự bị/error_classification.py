@@ -1,6 +1,6 @@
 from error_detection import damerau_levenshtein_trace       
 import re
-from config import TEENCODE_REPLACEMENTS, ABBREVIATION_REPLACEMENTS, PUNCTUATION, EMOIJI_LIST
+from config import TEENCODE_REPLACEMENTS, ABBREVIATION_REPLACEMENTS, PUNCTUATION, EMOJI_LIST
 import unicodedata
 
 def classify_error(a: str, b: str):
@@ -417,7 +417,7 @@ def wrong_emoji_error(text_a, text_b):
 
 
 def missing_emoji_error(text_a, text_b):
-    emoji_pattern = EMOIJI_LIST
+    emoji_pattern = EMOJI_LIST
     emojis_a = list(re.finditer(emoji_pattern, text_a))
     emojis_b = list(re.finditer(emoji_pattern, text_b))
     if len(emojis_b) != len(emojis_a) + 1:
@@ -436,7 +436,7 @@ def missing_emoji_error(text_a, text_b):
 
 
 def duplicate_emoji_error(text_a, text_b):
-    emoji_pattern = EMOIJI_LIST
+    emoji_pattern = "|".join(re.escape(e) for e in EMOJI_LIST)
     emojis_a = list(re.finditer(emoji_pattern, text_a))
     emojis_b = list(re.finditer(emoji_pattern, text_b))
     if len(emojis_a) != len(emojis_b) + 1:
@@ -618,6 +618,5 @@ def classify_text_errors(wrong_text, correct_text):
     errors.append(email_error(wrong_text, correct_text))
     return [e for e in errors if e is not None]
 
-    
 
-        
+

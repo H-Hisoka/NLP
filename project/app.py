@@ -13,122 +13,121 @@ import sys
 import unicodedata
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-
 import pandas as pd
 
-THU_MUC = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, THU_MUC)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
 
 from data.preprocessing import normalize_text
 from models.train_language_model import NGramLanguageModel
 from models.improved_model import ImproveSpellChecker
 from correction.candidate_generation import generate_candidates_fast
 
-FILE_DU_LIEU = os.path.join(THU_MUC, "dataset.csv")
-NGUONG_REAL_WORD = 8.0
-SO_PHUONG_AN = 3
-DAU_NGAT_CAU = ".!?;\n"
+DATA_FILE = os.path.join(BASE_DIR, "dataset.csv")
+REAL_WORD_THRESHOLD = 8.0
+NUM_CANDIDATES = 3
+SENTENCE_DELIMITERS = ".!?;\n"
 FONT = ("Segoe UI", 11)
 
 
 #  Phần xử lý (không liên quan giao diện)
-def tai_mo_hinh():
+def load_model():
     """Huấn luyện bigram trên cột 'right' của dataset.csv, trả về ImproveSpellChecker."""
-    df = pd.read_csv(FILE_DU_LIEU, encoding="utf-8-sig").dropna(subset=["right"])
-    cau_dung = [normalize_text(s) for s in df["right"]]
+    df = pd.read_csv(DATA_FILE, encoding="utf-8-sig").dropna(subset=["right"])
+    correct_sentences = [normalize_text(s) for s in df["right"]]
     lm = NGramLanguageModel()
-    lm.train([c for c in cau_dung if c])
+    lm.train([c for c in correct_sentences if c])
     return ImproveSpellChecker(lm)
 
 
-def tach_cau(van_ban):
+def split_sentences(text):
     """Tách đoạn văn thành các câu. Mỗi câu là danh sách (bắt đầu, kết thúc, từ)."""
-    cac_cau, cau_hien_tai, vi_tri_cuoi = [], [], 0
-    for m in re.finditer(r"[^\W\d_]+", van_ban):
-        khoang = van_ban[vi_tri_cuoi:m.start()]
-        if cau_hien_tai and any(c in DAU_NGAT_CAU for c in khoang):
-            cac_cau.append(cau_hien_tai)
-            cau_hien_tai = []
-        cau_hien_tai.append((m.start(), m.end(), m.group()))
-        vi_tri_cuoi = m.end()
-    if cau_hien_tai:
-        cac_cau.append(cau_hien_tai)
-    return cac_cau
+    sentences, current_sentence, last_position = [], [], 0
+    for m in re.finditer(r"[^\W\d_]+", text):
+        gap = text[last_position:m.start()]
+        if current_sentence and any(c in SENTENCE_DELIMITERS for c in gap):
+            sentences.append(current_sentence)
+            current_sentence = []
+        current_sentence.append((m.start(), m.end(), m.group()))
+        last_position = m.end()
+    if current_sentence:
+        sentences.append(current_sentence)
+    return sentences
 
 
-def khop_hoa_thuong(goc, moi):
+def match_case(original, new_word):
     """Giữ kiểu viết hoa của từ gốc cho từ mới."""
-    if len(goc) > 1 and goc.isupper():
-        return moi.upper()
-    if goc[0].isupper():
-        return moi.capitalize()
-    return moi
+    if len(original) > 1 and original.isupper():
+        return new_word.upper()
+    if original[0].isupper():
+        return new_word.capitalize()
+    return new_word
 
 
-def bo_sung_phuong_an(checker, tu, truoc, sau, hien_co):
-    """Nếu chưa đủ SO_PHUONG_AN thì lấy thêm ứng viên cách tối đa 2 ký tự."""
+def add_candidates(checker, word, previous_word, next_word, existing_candidates):
+    """Nếu chưa đủ NUM_CANDIDATES thì lấy thêm ứng viên cách tối đa 2 ký tự."""
     lm = checker.lm
-    ung_vien = generate_candidates_fast(
-        tu, lm.vocab, lm.unigram_counts, max_distance=2, top_n=20
+    candidates = generate_candidates_fast(
+        word, lm.vocab, lm.unigram_counts, max_distance=2, top_n=20
     )
-    if not ung_vien:
-        return hien_co
-    for cand, _ in checker.score(tu, ung_vien, [], truoc, sau):
-        if len(hien_co) >= SO_PHUONG_AN:
+    if not candidates:
+        return existing_candidates
+    for cand, _ in checker.score(word, candidates, [], previous_word, next_word):
+        if len(existing_candidates) >= NUM_CANDIDATES:
             break
-        if cand != tu and not cand.startswith("<") and cand not in hien_co:
-            hien_co.append(cand)
-    return hien_co
+        if cand != word and not cand.startswith("<") and cand not in existing_candidates:
+            existing_candidates.append(cand)
+    return existing_candidates
 
 
-def phan_tich(checker, van_ban):
+def analyze_text(checker, text):
     """Trả về danh sách các từ nghi sai (theo thứ tự xuất hiện), mỗi mục gồm:
     bat_dau, ket_thuc, tu, phuong_an (tối đa 3 từ gợi ý)."""
-    ket_qua = []
-    for cau in tach_cau(van_ban):
-        cac_tu = [t[2] for t in cau]
-        for i, (bat_dau, ket_thuc, tu) in enumerate(cau):
-            goi_y = checker.goi_y_cho_tu(cac_tu, i, SO_PHUONG_AN, NGUONG_REAL_WORD)
-            if goi_y == [tu]:
+    results = []
+    for sentence in split_sentences(text):
+        words = [t[2] for t in sentence]
+        for i, (start, end, word) in enumerate(sentence):
+            suggestions = checker.suggest_word_candidates( words, i, NUM_CANDIDATES, REAL_WORD_THRESHOLD)
+            if suggestions == [word]:
                 continue                          # không nghi sai
-            thuong = tu.lower()
-            ds = []
-            for c in goi_y:                       # bỏ từ gốc và token đặc biệt
-                if c != thuong and not c.startswith("<") and c not in ds:
-                    ds.append(c)
-            if not ds:
+            lowercase_word = word.lower()
+            candidate_list = []
+            for candidate in suggestions:                       # bỏ từ gốc và token đặc biệt
+                if candidate != lowercase_word and not candidate.startswith("<") and candidate not in candidate_list:
+                    candidate_list.append(candidate)
+            if not candidate_list:
                 continue
-            truoc = cac_tu[i - 1].lower() if i > 0 else "<s>"
-            sau = cac_tu[i + 1].lower() if i < len(cac_tu) - 1 else "</s>"
-            ds = bo_sung_phuong_an(checker, thuong, truoc, sau, ds)
-            ket_qua.append({
-                "bat_dau": bat_dau,
-                "ket_thuc": ket_thuc,
-                "tu": tu,
-                "phuong_an": [khop_hoa_thuong(tu, c) for c in ds],
+            previous_word = words[i - 1].lower() if i > 0 else "<s>"
+            next_word = words[i + 1].lower() if i < len(words) - 1 else "</s>"
+            candidate_list = add_candidates(checker, lowercase_word, previous_word, next_word, candidate_list)
+            results.append({
+                "bat_dau": start,
+                "ket_thuc": end,
+                "tu": word,
+                "phuong_an": [match_case(word, c) for c in candidate_list],
             })
-    return ket_qua
+    return results
 
 
-def ap_dung(van_ban, ket_qua, lua_chon):
-    """lua_chon[i] = 0: giữ nguyên (từ chối); 1..3: chấp nhận phương án thứ n."""
-    phan, cuoi = [], 0
-    for muc, chon in zip(ket_qua, lua_chon):
-        phan.append(van_ban[cuoi:muc["bat_dau"]])
-        phan.append(muc["phuong_an"][chon - 1] if chon else muc["tu"])
-        cuoi = muc["ket_thuc"]
-    phan.append(van_ban[cuoi:])
-    return "".join(phan)
+def apply_corrections(text, results, choices):
+    """choices[i] = 0: giữ nguyên (từ chối); 1..3: chấp nhận phương án thứ n."""
+    segments, end = [], 0
+    for item, choice in zip(results, choices):
+        segments.append(text[end:item["bat_dau"]])
+        segments.append(item["phuong_an"][choice - 1] if choice else item["tu"])
+        end = item["ket_thuc"]
+    segments.append(text[end:])
+    return "".join(segments)
 
 
 # Giao diện
-class UngDung:
+class SpellCheckerApp:
     def __init__(self, root, checker):
         self.root = root
         self.checker = checker
-        self.van_ban = ""
-        self.ket_qua = []
-        self.bien_chon = []
+        self.text = ""
+        self.results = []
+        self.selection_vars = []
 
         root.title("Sửa lỗi chính tả tiếng Việt")
         root.geometry("1150x720")
@@ -136,168 +135,168 @@ class UngDung:
         root.columnconfigure(1, weight=1)
         root.rowconfigure(0, weight=1)
 
-        trai = ttk.Frame(root, padding=8)
-        trai.grid(row=0, column=0, sticky="nsew")
-        phai = ttk.Frame(root, padding=8)
-        phai.grid(row=0, column=1, sticky="nsew")
+        left_frame = ttk.Frame(root, padding=8)
+        left_frame.grid(row=0, column=0, sticky="nsew")
+        right_frame = ttk.Frame(root, padding=8)
+        right_frame.grid(row=0, column=1, sticky="nsew")
 
         # Cột trái: nhập liệu và đoạn văn có đánh dấu
-        ttk.Label(trai, text="1. Nhập hoặc tải lên đoạn văn").pack(anchor="w")
-        self.o_nhap = tk.Text(trai, height=9, wrap="word", font=FONT)
-        self.o_nhap.pack(fill="x")
-        hang = ttk.Frame(trai)
-        hang.pack(fill="x", pady=4)
-        ttk.Button(hang, text="Tải file .txt", command=self.tai_file).pack(side="left")
-        ttk.Button(hang, text="Kiểm tra chính tả", command=self.kiem_tra).pack(side="left", padx=4)
-        ttk.Button(hang, text="Xóa", command=self.xoa).pack(side="left")
+        ttk.Label(left_frame, text="1. Nhập hoặc tải lên đoạn văn").pack(anchor="w")
+        self.input_text = tk.Text(left_frame, height=9, wrap="word", font=FONT)
+        self.input_text.pack(fill="x")
+        button_row = ttk.Frame(left_frame)
+        button_row.pack(fill="x", pady=4)
+        ttk.Button(button_row, text="Tải file .txt", command=self.load_file).pack(side="left")
+        ttk.Button(button_row, text="Kiểm tra chính tả", command=self.check_spelling).pack(side="left", padx=4)
+        ttk.Button(button_row, text="Xóa", command=self.clear_text).pack(side="left")
 
-        ttk.Label(trai, text="2. Vị trí nghi sai (vàng = nghi sai, xanh = đã sửa)").pack(
+        ttk.Label(left_frame, text="2. Vị trí nghi sai (vàng = nghi sai, xanh = đã sửa)").pack(
             anchor="w", pady=(8, 0))
-        self.o_danh_dau = tk.Text(trai, height=12, wrap="word", font=FONT, state="disabled")
-        self.o_danh_dau.pack(fill="both", expand=True)
-        self.o_danh_dau.tag_configure("nghi", background="#fff3a3")
-        self.o_danh_dau.tag_configure("da_sua", background="#b7efc5")
+        self.highlight_text = tk.Text(left_frame, height=12, wrap="word", font=FONT, state="disabled")
+        self.highlight_text.pack(fill="both", expand=True)
+        self.highlight_text.tag_configure("nghi", background="#fff3a3")
+        self.highlight_text.tag_configure("da_sua", background="#b7efc5")
 
         # Cột phải: phương án sửa và kết quả
-        ttk.Label(phai, text="3. Chọn phương án để chấp nhận (hoặc 'Giữ nguyên' để từ chối)").pack(anchor="w")
-        khung = ttk.Frame(phai)
-        khung.pack(fill="both", expand=True)
-        self.canvas = tk.Canvas(khung, highlightthickness=0)
-        thanh = ttk.Scrollbar(khung, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=thanh.set)
-        thanh.pack(side="right", fill="y")
+        ttk.Label(right_frame, text="3. Chọn phương án để chấp nhận (hoặc 'Giữ nguyên' để từ chối)").pack(anchor="w")
+        frame = ttk.Frame(right_frame)
+        frame.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.trong = ttk.Frame(self.canvas)
-        self.canvas.create_window((0, 0), window=self.trong, anchor="nw")
-        self.trong.bind(
+        self.candidate_frame = ttk.Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.candidate_frame, anchor="nw")
+        self.candidate_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.bind_all(
             "<MouseWheel>",
             lambda e: self.canvas.yview_scroll(int(-e.delta / 120), "units"))
 
-        hang2 = ttk.Frame(phai)
-        hang2.pack(fill="x", pady=4)
-        ttk.Button(hang2, text="Chấp nhận gợi ý 1 cho tất cả",
-                   command=self.chap_nhan_tat_ca).pack(side="left")
-        ttk.Button(hang2, text="Từ chối tất cả",
-                   command=self.tu_choi_tat_ca).pack(side="left", padx=4)
+        button_row_2 = ttk.Frame(right_frame)
+        button_row_2.pack(fill="x", pady=4)
+        ttk.Button(button_row_2, text="Chấp nhận gợi ý 1 cho tất cả",
+                   command=self.accept_all).pack(side="left")
+        ttk.Button(button_row_2, text="Từ chối tất cả",
+                   command=self.reject_all).pack(side="left", padx=4)
 
-        ttk.Label(phai, text="4. Đoạn văn sau khi sửa").pack(anchor="w", pady=(8, 0))
-        self.o_ket_qua = tk.Text(phai, height=10, wrap="word", font=FONT, state="disabled")
-        self.o_ket_qua.pack(fill="both", expand=True)
-        ttk.Button(phai, text="Lưu kết quả ra file...", command=self.luu_file).pack(
+        ttk.Label(right_frame, text="4. Đoạn văn sau khi sửa").pack(anchor="w", pady=(8, 0))
+        self.output_text = tk.Text(right_frame, height=10, wrap="word", font=FONT, state="disabled")
+        self.output_text.pack(fill="both", expand=True)
+        ttk.Button(right_frame, text="Lưu kết quả ra file...", command=self.save_file).pack(
             anchor="e", pady=4)
 
-        self.nhan_trang_thai = ttk.Label(root, text="Sẵn sàng", anchor="w")
-        self.nhan_trang_thai.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 6))
+        self.status_label = ttk.Label(root, text="Sẵn sàng", anchor="w")
+        self.status_label.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 6))
 
     # -- tiện ích
-    def dat_text(self, o, noi_dung):
+    def set_text(self, o, content):
         o.config(state="normal")
         o.delete("1.0", "end")
-        o.insert("1.0", noi_dung)
+        o.insert("1.0", content)
         o.config(state="disabled")
 
-    def trang_thai(self, noi_dung):
-        self.nhan_trang_thai.config(text=noi_dung)
+    def update_status(self, content):
+        self.status_label.config(text=content)
         self.root.update_idletasks()
 
     # -- các nút
-    def tai_file(self):
-        duong_dan = filedialog.askopenfilename(
+    def load_file(self):
+        file_path = filedialog.askopenfilename(
             title="Chọn file văn bản", filetypes=[("Văn bản", "*.txt"), ("Tất cả", "*.*")])
-        if not duong_dan:
+        if not file_path:
             return
         try:
-            with open(duong_dan, "r", encoding="utf-8-sig") as f:
-                noi_dung = f.read()
-        except (OSError, UnicodeDecodeError) as loi:
-            messagebox.showerror("Lỗi", f"Không đọc được file (cần mã hóa UTF-8):\n{loi}")
+            with open(file_path, "r", encoding="utf-8-sig") as f:
+                content = f.read()
+        except (OSError, UnicodeDecodeError) as error:
+            messagebox.showerror("Lỗi", f"Không đọc được file (cần mã hóa UTF-8):\n{error}")
             return
-        self.o_nhap.delete("1.0", "end")
-        self.o_nhap.insert("1.0", noi_dung)
+        self.input_text.delete("1.0", "end")
+        self.input_text.insert("1.0", content)
 
-    def xoa(self):
-        self.o_nhap.delete("1.0", "end")
-        self.van_ban, self.ket_qua, self.bien_chon = "", [], []
-        for w in self.trong.winfo_children():
+    def clear_text(self):
+        self.input_text.delete("1.0", "end")
+        self.text, self.results, self.selection_vars = "", [], []
+        for w in self.candidate_frame.winfo_children():
             w.destroy()
-        self.dat_text(self.o_danh_dau, "")
-        self.dat_text(self.o_ket_qua, "")
-        self.trang_thai("Sẵn sàng")
+        self.set_text(self.highlight_text, "")
+        self.set_text(self.output_text, "")
+        self.update_status("Sẵn sàng")
 
-    def kiem_tra(self):
-        van_ban = unicodedata.normalize("NFC", self.o_nhap.get("1.0", "end-1c"))
-        if not van_ban.strip():
+    def check_spelling(self):
+        text = unicodedata.normalize("NFC", self.input_text.get("1.0", "end-1c"))
+        if not text.strip():
             messagebox.showinfo("Thông báo", "Hãy nhập hoặc tải lên một đoạn văn.")
             return
-        self.trang_thai("Đang phân tích...")
-        self.van_ban = van_ban
-        self.ket_qua = phan_tich(self.checker, van_ban)
-        self.dat_text(self.o_danh_dau, van_ban)
-        self.xay_danh_sach_phuong_an()
-        self.cap_nhat()
+        self.update_status("Đang phân tích...")
+        self.text = text
+        self.results = analyze_text(self.checker, text)
+        self.set_text(self.highlight_text, text)
+        self.build_candidate_list()
+        self.update_display()
 
-    def xay_danh_sach_phuong_an(self):
-        for w in self.trong.winfo_children():
+    def build_candidate_list(self):
+        for w in self.candidate_frame.winfo_children():
             w.destroy()
-        self.bien_chon = []
-        for muc in self.ket_qua:
-            bien = tk.IntVar(value=0)
-            self.bien_chon.append(bien)
-            khung = ttk.LabelFrame(self.trong, text=f"“{muc['tu']}”")
-            khung.pack(fill="x", padx=4, pady=3)
-            ttk.Radiobutton(khung, text="Giữ nguyên (từ chối)", variable=bien,
-                            value=0, command=self.cap_nhat).pack(anchor="w")
-            for n, cand in enumerate(muc["phuong_an"], start=1):
-                ttk.Radiobutton(khung, text=f"{n}. {cand}", variable=bien,
-                                value=n, command=self.cap_nhat).pack(anchor="w")
+        self.selection_vars = []
+        for item in self.results:
+            variable = tk.IntVar(value=0)
+            self.selection_vars.append(variable)
+            frame = ttk.LabelFrame(self.candidate_frame, text=f"“{item['tu']}”")
+            frame.pack(fill="x", padx=4, pady=3)
+            ttk.Radiobutton(frame, text="Giữ nguyên (từ chối)", variable=variable,
+                            value=0, command=self.update_display).pack(anchor="w")
+            for n, cand in enumerate(item["phuong_an"], start=1):
+                ttk.Radiobutton(frame, text=f"{n}. {cand}", variable=variable,
+                                value=n, command=self.update_display).pack(anchor="w")
 
-    def cap_nhat(self):
-        lua_chon = [b.get() for b in self.bien_chon]
-        for muc, chon in zip(self.ket_qua, lua_chon):
-            dau = f"1.0+{muc['bat_dau']}c"
-            cuoi = f"1.0+{muc['ket_thuc']}c"
-            self.o_danh_dau.tag_remove("nghi", dau, cuoi)
-            self.o_danh_dau.tag_remove("da_sua", dau, cuoi)
-            self.o_danh_dau.tag_add("da_sua" if chon else "nghi", dau, cuoi)
-        self.dat_text(self.o_ket_qua, ap_dung(self.van_ban, self.ket_qua, lua_chon))
-        if self.ket_qua:
-            da_nhan = sum(1 for c in lua_chon if c)
-            self.trang_thai(
-                f"Tìm thấy {len(self.ket_qua)} từ nghi sai, đã chấp nhận {da_nhan}.")
+    def update_display(self):
+        selections = [b.get() for b in self.selection_vars]
+        for item, choice in zip(self.results, selections):
+            first = f"1.0+{item['bat_dau']}c"
+            last_end = f"1.0+{item['ket_thuc']}c"
+            self.highlight_text.tag_remove("nghi", first, last_end)
+            self.highlight_text.tag_remove("da_sua", first, last_end)
+            self.highlight_text.tag_add("da_sua" if choice else "nghi", first, last_end)
+        self.set_text(self.output_text, apply_corrections(self.text, self.results, selections))
+        if self.results:
+            accepted_count = sum(1 for c in selections if c)
+            self.update_status(
+                f"Tìm thấy {len(self.results)} từ nghi sai, đã chấp nhận {accepted_count}.")
         else:
-            self.trang_thai("Không phát hiện từ nghi sai.")
+            self.update_status("Không phát hiện từ nghi sai.")
 
-    def chap_nhan_tat_ca(self):
-        for b in self.bien_chon:
+    def accept_all(self):
+        for b in self.selection_vars:
             b.set(1)
-        self.cap_nhat()
+        self.update_display()
 
-    def tu_choi_tat_ca(self):
-        for b in self.bien_chon:
+    def reject_all(self):
+        for b in self.selection_vars:
             b.set(0)
-        self.cap_nhat()
+        self.update_display()
 
-    def luu_file(self):
-        if not self.van_ban:
+    def save_file(self):
+        if not self.text:
             messagebox.showinfo("Thông báo", "Chưa có kết quả để lưu.")
             return
-        duong_dan = filedialog.asksaveasfilename(
+        file_path = filedialog.asksaveasfilename(
             defaultextension=".txt", filetypes=[("Văn bản", "*.txt")])
-        if not duong_dan:
+        if not file_path:
             return
-        lua_chon = [b.get() for b in self.bien_chon]
-        with open(duong_dan, "w", encoding="utf-8") as f:
-            f.write(ap_dung(self.van_ban, self.ket_qua, lua_chon))
-        self.trang_thai(f"Đã lưu: {duong_dan}")
+        selections = [b.get() for b in self.selection_vars]
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(apply_corrections(self.text, self.results, selections))
+        self.update_status(f"Đã lưu: {file_path}")
 
 
 def main():
-    checker = tai_mo_hinh()
+    checker = load_model()
     root = tk.Tk()
-    UngDung(root, checker)
+    SpellCheckerApp(root, checker)
     root.mainloop()
 
 
