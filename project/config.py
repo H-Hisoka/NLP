@@ -1,6 +1,4 @@
 import os
-CONFUSION_SET = os.path.join(os.path.dirname(os.path.abspath(__file__)), "confusion_set.txt")
-
 ERROR_TYPES = [
     "missing_character",
     "extra_character",
@@ -75,7 +73,7 @@ TONE_CONFUSIONS = {
     for y in group
     if x != y
 }
-import os
+TONE_CONFUSIONS |= {("d", "đ"), ("đ", "d")}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFUSION_SET = os.path.join(BASE_DIR, "confusion_set.txt")
 

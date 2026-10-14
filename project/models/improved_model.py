@@ -1,12 +1,13 @@
 import ast
+import hashlib
+import os
+import pickle
 from config import CONFUSION_SET, CACHE_FILE
 from evaluation.baseline import NGramLanguageModel
 import math
 from correction.candidate_generation import generate_candidates_fast
 from correction.error_detection import levenshtein
-import hashlib
-import os
-import pickle
+
 class  ImproveSpellChecker:
     def __init__(self, lm_model: NGramLanguageModel):
         self.lm = lm_model

@@ -272,10 +272,10 @@ def generate_error(text, error_type):
 
 def generate_error_file():
 
-    # Đường dẫn đến dulieu.csv
+    # Đường dẫn đến dataset.csv
     file_path = os.path.join(
         os.path.dirname(__file__),
-        "dulieu.csv"
+        "dataset.csv"
     )
 
     # Đọc file CSV
@@ -287,13 +287,13 @@ def generate_error_file():
     # Kiểm tra cột id
     if "id" not in df.columns:
         raise ValueError(
-            "File dulieu.csv phải có cột 'id'"
+            "File dataset.csv phải có cột 'id'"
         )
 
     # Kiểm tra cột correct_text
     if "correct_text" not in df.columns:
         raise ValueError(
-            "File dulieu.csv phải có cột 'correct_text'"
+            "File dataset.csv phải có cột 'correct_text'"
         )
 
     # Danh sách dữ liệu lỗi
@@ -306,18 +306,18 @@ def generate_error_file():
         correct_text = row["correct_text"]
 
         # Tạo 30 loại lỗi
-        for loai_loi in DANH_SACH_LOI:
+        for generate_error_file in ERROR_TYPES:
 
             error_text = generate_error(
                 correct_text,
-                loai_loi
+                generate_error_file
             )
 
             data.append({
                 "id": sentence_id,
                 "correct_text": correct_text,
                 "error_text": error_text,
-                "error_type": loai_loi
+                "error_type": generate_error_file
             })
 
     # Tạo DataFrame mới
