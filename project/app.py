@@ -86,8 +86,13 @@ def analyze_text(checker, text):
     results = []
     for sentence in split_sentences(text):
         words = [t[2] for t in sentence]
+        decoded = None
+        if checker.is_unaccented(" ".join(words)):      # câu không dấu: chọn cả chuỗi từ hợp lý nhất
+            decoded = checker.decode_sentence(" ".join(words))
         for i, (start, end, word) in enumerate(sentence):
             suggestions = checker.suggest_word_candidates( words, i, NUM_CANDIDATES, REAL_WORD_THRESHOLD)
+            if decoded is not None and (decoded[i] != word.lower() or suggestions != [word]):
+                suggestions = checker.merge_suggestions(word, decoded[i], suggestions, NUM_CANDIDATES)
             if suggestions == [word]:
                 continue                          # không nghi sai
             lowercase_word = word.lower()

@@ -78,9 +78,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFUSION_SET = os.path.join(BASE_DIR, "confusion_set.txt")
 
 DATA_FILE = os.path.join(BASE_DIR, "dataset.csv")      # cột: stt, wrong, right
-CACHE_FILE = os.path.join(BASE_DIR, "cache_ung_vien.pkl")   # xóa file này nếu sửa code sinh ứng viên
+CACHE_FILE = os.path.join(BASE_DIR, "candidate_cache.pkl")   # xóa file này nếu sửa code sinh ứng viên
 TRAIN_RATIO = 0.8
 SEED = 42
 TEST_SAMPLE_SIZE = None        # đặt None để chạy toàn bộ tập test
 REAL_WORD_THRESHOLD = 8.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
 THRESHOLD_VALUES = [2.0, 5.0, 8.0, 12.0, 16.0]
+# Giải mã cả câu cho câu không dấu (improved_model.py)
+DECODE_ACCENT_COST = 1.0   # chi phí khôi phục dấu (bỏ dấu thì ra đúng từ đang xét)
+DECODE_EDIT_COST = 4.0     # chi phí mỗi thao tác sửa ký tự khác
+DECODE_OOV_COST = 4.0      # phạt khi giữ nguyên một từ không có trong từ vựng
