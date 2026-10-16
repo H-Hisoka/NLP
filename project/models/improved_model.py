@@ -2,7 +2,10 @@ import ast
 import hashlib
 import os
 import pickle
-from config import CONFUSION_SET, CACHE_FILE
+from collections import defaultdict
+from config import (CONFUSION_SET, CACHE_FILE, DECODE_ACCENT_COST,
+                    DECODE_EDIT_COST, DECODE_OOV_COST)
+from evaluation.error_analysis import remove_accents
 from evaluation.baseline import NGramLanguageModel
 import math
 from correction.candidate_generation import generate_candidates_fast
@@ -13,6 +16,10 @@ class  ImproveSpellChecker:
         self.lm = lm_model
         self.confusion_dict = self.load_confusion_set(CONFUSION_SET)
         self.cache = {}
+        self.accent_index = defaultdict(list)   # từ bỏ dấu -> các từ có dấu trong từ vựng
+        for w in self.lm.vocab:
+            if not w.startswith("<"):
+                self.accent_index[remove_accents(w)].append(w)
     def load_confusion_set(self, file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             tree = ast.parse(f.read())
@@ -63,7 +70,79 @@ class  ImproveSpellChecker:
         return [c for c, _ in scored[:k]]
     def correct_sentence_top_k(self, sentence: str, k=3, threshold=8.0):
         words = sentence.split()
-        return [self.suggest_word_candidates(words, i, k, threshold) for i in range(len(words))]
+        suggestions = [self.suggest_word_candidates(words, i, k, threshold) for i in range(len(words))]
+        if self.is_unaccented(sentence):
+            # Câu không dấu: chọn cả chuỗi từ hợp lý nhất, đặt lên đầu danh sách gợi ý
+            decoded = self.decode_sentence(sentence)
+            for i, best in enumerate(decoded):
+                if best == words[i].lower():
+                    best = words[i]                  # giữ nguyên kiểu viết hoa của từ gốc
+                if best != words[i] or suggestions[i] != [words[i]]:
+                    suggestions[i] = self.merge_suggestions(words[i], best, suggestions[i], k)
+        return suggestions
+
+    def accent_candidates(self, word):
+        """Các từ có dấu mà bỏ dấu đi thì giống `word`, xếp theo tần suất giảm dần."""
+        candidates = [c for c in self.accent_index.get(word.lower(), []) if c != word.lower()]
+        return sorted(candidates, key=lambda c: -self.lm.unigram_counts[c])
+
+    def merge_suggestions(self, word, best, suggestions, k=3):
+        """Gộp: từ giải mã được, các cách khôi phục dấu (theo tần suất), rồi gợi ý còn lại."""
+        merged = []
+        for candidate in [best] + self.accent_candidates(word) + list(suggestions):
+            if candidate not in merged:
+                merged.append(candidate)
+        return merged[:k]
+    def is_unaccented(self, sentence):
+        """Câu có từ hai từ trở lên và không có chữ nào mang dấu."""
+        return len(sentence.split()) >= 2 and remove_accents(sentence) == sentence
+
+    def word_options(self, word):
+        """Các từ có thể là từ đúng của `word`, kèm chi phí chuyển đổi."""
+        in_vocab = word in self.lm.vocab
+        max_distance = 1 if in_vocab else 2
+        cache_key = (word, max_distance)
+        if cache_key not in self.cache:
+            self.cache[cache_key] = (
+                generate_candidates_fast(
+                    word, self.lm.vocab, self.lm.unigram_counts,
+                    max_distance=max_distance, top_n=20
+                ),
+                self.get_confusion_candidates(word, self.lm.vocab)
+            )
+        options = {word: 0.0 if in_vocab else DECODE_OOV_COST}
+        for candidate in self.accent_index.get(word, []):
+            if candidate != word:
+                options[candidate] = DECODE_ACCENT_COST
+        for candidate, dist, freq in self.cache[cache_key][0][:8]:
+            if candidate not in options and not candidate.startswith("<"):
+                options[candidate] = DECODE_EDIT_COST * dist
+        return options
+
+    def decode_sentence(self, sentence):
+        """Viterbi: chọn cả chuỗi từ có tổng điểm bigram trừ chi phí chuyển đổi cao nhất."""
+        words = sentence.lower().split()
+        lattice = [self.word_options(w) if w.isalpha() else {w: 0.0} for w in words]
+        previous = {"<s>": (0.0, None)}          # từ -> (điểm tốt nhất, từ đứng trước)
+        history = []
+        for options in lattice:
+            current = {}
+            for word, cost in options.items():
+                best_score, best_prev = max(
+                    (prev_score + math.log(self.lm.get_bigram_prob(prev, word)), prev)
+                    for prev, (prev_score, _) in previous.items()
+                )
+                current[word] = (best_score - cost, best_prev)
+            history.append(current)
+            previous = current
+        last_word = max(
+            previous,
+            key=lambda w: previous[w][0] + math.log(self.lm.get_bigram_prob(w, "</s>"))
+        )
+        result = [last_word]
+        for current in reversed(history[1:]):
+            result.append(current[result[-1]][1])
+        return result[::-1]
 
     def correct_sentence(self, sentence: str, threshold=8.0):
         suggestions = self.correct_sentence_top_k(sentence, 1, threshold)
