@@ -43,7 +43,7 @@ def load_model():
 def split_sentences(text):
     """Tách đoạn văn thành các câu. Mỗi câu là danh sách (bắt đầu, kết thúc, từ)."""
     sentences, current_sentence, last_position = [], [], 0
-    for m in re.finditer(r"[^\W\d_]+", text):
+    for m in re.finditer(r"[^\W_]+", text):
         gap = text[last_position:m.start()]
         if current_sentence and any(c in SENTENCE_DELIMITERS for c in gap):
             sentences.append(current_sentence)
@@ -105,6 +105,8 @@ def analyze_text(checker, text):
             previous_word = words[i - 1].lower() if i > 0 else "<s>"
             next_word = words[i + 1].lower() if i < len(words) - 1 else "</s>"
             candidate_list = add_candidates(checker, lowercase_word, previous_word, next_word, candidate_list)
+            if len(candidate_list) < NUM_CANDIDATES:      # từ gõ Telex/VNI không có từ nào gần: lấy từ gần với gợi ý đầu
+                candidate_list = add_candidates(checker, candidate_list[0], previous_word, next_word, candidate_list)
             results.append({
                 "bat_dau": start,
                 "ket_thuc": end,

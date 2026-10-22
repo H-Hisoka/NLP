@@ -2,6 +2,7 @@ import ast
 import hashlib
 import os
 import pickle
+from data.preprocessing import telex_candidates, vni_candidates
 from collections import defaultdict
 from config import (CONFUSION_SET, CACHE_FILE, DECODE_ACCENT_COST,
                     DECODE_EDIT_COST, DECODE_OOV_COST)
@@ -28,13 +29,37 @@ class  ImproveSpellChecker:
         for k, v in zip(dict_node.keys, dict_node.values):
             result.setdefault(ast.literal_eval(k), set()).update(ast.literal_eval(v))
         return result
+    @staticmethod
+    def is_word(token):
+        """Chữ, hoặc chữ lẫn số (kiểu gõ VNI như 'vie65t'); chuỗi toàn số thì không."""
+        return token.isalnum() and any(c.isalpha() for c in token)
+
+    def typing_candidates(self, word):
+        """Các từ tiếng Việt mà `word` có thể là do gõ Telex/VNI khi bộ gõ bị tắt (xếp theo tần suất)."""
+        word = word.lower()
+        if word in self.lm.vocab:
+            return []
+        found = set(telex_candidates(word, self.lm.vocab)) | set(vni_candidates(word, self.lm.vocab))
+        return sorted(found, key=lambda c: -self.lm.unigram_counts[c])
     def suggest_word_candidates(self, words, i, k=3, threshold=8.0):
         """Trả về tối đa k ứng viên cho words[i].
         Nếu từ không bị nghi sai thì trả về [từ gốc]."""
         word = words[i]
         word_lower = word.lower()
-        if not word.isalpha():
+        if not self.is_word(word):
             return [word]
+        typed = self.typing_candidates(word_lower)
+        if typed and word_lower not in self.lm.vocab:
+            # Gõ Telex/VNI: đặt các từ chuyển đổi lên đầu, rồi bổ sung bằng gợi ý thông thường
+            rest = [c for c in self.suggest_without_typing(words, i, k, threshold) if c not in typed]
+            return (typed + rest)[:k]
+        if any(c.isdigit() for c in word):
+            return [word]
+        return self.suggest_without_typing(words, i, k, threshold)
+
+    def suggest_without_typing(self, words, i, k=3, threshold=8.0):
+        word = words[i]
+        word_lower = word.lower()
         prev_word = words[i - 1].lower() if i > 0 else "<s>"
         next_word = words[i + 1].lower() if i < len(words) - 1 else "</s>"
 
@@ -82,9 +107,10 @@ class  ImproveSpellChecker:
         return suggestions
 
     def accent_candidates(self, word):
-        """Các từ có dấu mà bỏ dấu đi thì giống `word`, xếp theo tần suất giảm dần."""
-        candidates = [c for c in self.accent_index.get(word.lower(), []) if c != word.lower()]
-        return sorted(candidates, key=lambda c: -self.lm.unigram_counts[c])
+        """Từ gõ Telex/VNI chuyển được, rồi các từ có dấu mà bỏ dấu đi thì giống `word` (theo tần suất)."""
+        typed = self.typing_candidates(word)
+        accented = [c for c in self.accent_index.get(word.lower(), []) if c != word.lower() and c not in typed]
+        return typed + sorted(accented, key=lambda c: -self.lm.unigram_counts[c])
 
     def merge_suggestions(self, word, best, suggestions, k=3):
         """Gộp: từ giải mã được, các cách khôi phục dấu (theo tần suất), rồi gợi ý còn lại."""
@@ -111,6 +137,8 @@ class  ImproveSpellChecker:
                 self.get_confusion_candidates(word, self.lm.vocab)
             )
         options = {word: 0.0 if in_vocab else DECODE_OOV_COST}
+        for candidate in self.typing_candidates(word):
+            options[candidate] = DECODE_ACCENT_COST
         for candidate in self.accent_index.get(word, []):
             if candidate != word:
                 options[candidate] = DECODE_ACCENT_COST
@@ -122,7 +150,7 @@ class  ImproveSpellChecker:
     def decode_sentence(self, sentence):
         """Viterbi: chọn cả chuỗi từ có tổng điểm bigram trừ chi phí chuyển đổi cao nhất."""
         words = sentence.lower().split()
-        lattice = [self.word_options(w) if w.isalpha() else {w: 0.0} for w in words]
+        lattice = [self.word_options(w) if self.is_word(w) else {w: 0.0} for w in words]
         previous = {"<s>": (0.0, None)}          # từ -> (điểm tốt nhất, từ đứng trước)
         history = []
         for options in lattice:
