@@ -1,7 +1,7 @@
 import re
 import unicodedata
 import pandas as pd
-from config import DATA_FILE, TRAIN_RATIO, SEED
+from config import DATA_FILE, TRAIN_RATIO, SEED, SPECIAL_PATTERNS
 
 
 def normalize_text(text: str) -> str:
@@ -25,6 +25,7 @@ def load_data(file_path=DATA_FILE):
 
 
 def split_train_test(df, ratio=TRAIN_RATIO, seed=SEED):
+    df = df.drop_duplicates(subset=["right_norm"])
     df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
     split_index = int(len(df) * ratio)
     return df.iloc[:split_index], df.iloc[split_index:]
@@ -93,3 +94,15 @@ def vni_candidates(token, vocab):
         else:
             return []
     return apply_tone("".join(letters), tone, vocab)
+# Nhận diện email, link, số điện thoại (không phải chữ cần sửa chính tả) 
+SPECIAL_REGEX = re.compile("|".join(f"(?P<{name}>{pattern})" for name, pattern in SPECIAL_PATTERNS.items()))
+def find_special_spans(text):
+    """Danh sách (bắt đầu, kết thúc, loại) của các đoạn email, url, số điện thoại, ngày, giờ, hashtag."""
+    return [(m.start(), m.end(), m.lastgroup) for m in SPECIAL_REGEX.finditer(text)]
+
+def mask_special_spans(text):
+    """Thay các đoạn đặc biệt bằng ký tự '\x00' (độ dài giữ nguyên) để không bị tách thành từ."""
+    chars = list(text)
+    for start, end, _ in find_special_spans(text):
+        chars[start:end] = "\x00" * (end - start)
+    return "".join(chars)

@@ -1,12 +1,3 @@
-"""
-app.py - Ứng dụng sửa lỗi chính tả tiếng Việt (giao diện Tkinter)
-
-Chạy: mở terminal tại thư mục project/ rồi gõ  python app.py
-
-Cách dùng: nhập hoặc tải lên đoạn văn -> "Kiểm tra chính tả" -> xem các từ nghi sai
-được tô vàng -> với mỗi từ chọn 1 trong 3 phương án để chấp nhận (hoặc "Giữ nguyên"
-để từ chối) -> đoạn văn sau khi sửa hiện ở ô cuối.
-"""
 import os
 import re
 import sys
@@ -17,14 +8,13 @@ import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
-
-from data.preprocessing import normalize_text
+from config import REAL_WORD_THRESHOLD
+from data.preprocessing import normalize_text, mask_special_spans
 from models.train_language_model import NGramLanguageModel
 from models.improved_model import ImproveSpellChecker
 from correction.candidate_generation import generate_candidates_fast
 
 DATA_FILE = os.path.join(BASE_DIR, "dataset.csv")
-REAL_WORD_THRESHOLD = 8.0
 NUM_CANDIDATES = 3
 SENTENCE_DELIMITERS = ".!?;\n"
 FONT = ("Segoe UI", 11)
@@ -43,8 +33,9 @@ def load_model():
 def split_sentences(text):
     """Tách đoạn văn thành các câu. Mỗi câu là danh sách (bắt đầu, kết thúc, từ)."""
     sentences, current_sentence, last_position = [], [], 0
-    for m in re.finditer(r"[^\W_]+", text):
-        gap = text[last_position:m.start()]
+    masked = mask_special_spans(text)      # email, link, số điện thoại... không bị tách thành từ
+    for m in re.finditer(r"[^\W_]+", masked):
+        gap = masked[last_position:m.start()]
         if current_sentence and any(c in SENTENCE_DELIMITERS for c in gap):
             sentences.append(current_sentence)
             current_sentence = []

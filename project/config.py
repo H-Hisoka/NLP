@@ -82,9 +82,25 @@ CACHE_FILE = os.path.join(BASE_DIR, "candidate_cache.pkl")   # xóa file này n�
 TRAIN_RATIO = 0.8
 SEED = 42
 TEST_SAMPLE_SIZE = None        # đặt None để chạy toàn bộ tập test
-REAL_WORD_THRESHOLD = 8.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
+REAL_WORD_THRESHOLD = 10.0      # từ đúng chỉ bị sửa khi ứng viên hơn ít nhất ngần này điểm
 THRESHOLD_VALUES = [2.0, 5.0, 8.0, 12.0, 16.0]
 # Giải mã cả câu cho câu không dấu (improved_model.py)
 DECODE_ACCENT_COST = 1.0   # chi phí khôi phục dấu (bỏ dấu thì ra đúng từ đang xét)
 DECODE_EDIT_COST = 4.0     # chi phí mỗi thao tác sửa ký tự khác
 DECODE_OOV_COST = 4.0      # phạt khi giữ nguyên một từ không có trong từ vựng
+# Trọng số chấm điểm ứng viên (improved_model.py, hàm score)
+SCORE_EDIT_WEIGHT = 1.0       # phạt cho mỗi đơn vị khoảng cách sửa
+SCORE_CONFUSION_BONUS = 6.0   # thưởng cho ứng viên nằm trong confusion set
+SCORE_FREQ_WEIGHT = 1.0       # thưởng theo log tần suất của từ ứng viên
+SCORE_LEFT_WEIGHT = 0.85      # trọng số xác suất bigram với từ đứng trước
+SCORE_RIGHT_WEIGHT = 1.0      # trọng số xác suất bigram với từ đứng sau
+SCORE_TONE_AWARE = False      # True: lỗi chỉ khác dấu thanh bị phạt nhẹ hơn (weighted_edit_distance)
+# Các đoạn đặc biệt cần bỏ qua khi kiểm tra chính tả (tên -> regex).
+SPECIAL_PATTERNS = {
+    "email": r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+",
+    "url": r"(?:https?://|www\.)[^\s]+",
+    "phone": r"(?<![\w.])(?:(?:\+84|84|0)[\s.-]?\(?\d{1,3}\)?|\(0\d{1,3}\))(?:[\s.-]?\d{2,4}){2,3}(?!\w)",
+    "date": r"(?<![\w/])(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}/\d{1,2})(?![\w/])",
+    "time": r"(?<![\w:])\d{1,2}(?:[:hH]\d{2}|[hH])(?![\w:])",
+    "social": r"(?<!\w)[#@]\w+",
+}

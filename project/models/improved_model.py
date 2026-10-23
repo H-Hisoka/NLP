@@ -5,7 +5,10 @@ import pickle
 from data.preprocessing import telex_candidates, vni_candidates
 from collections import defaultdict
 from config import (CONFUSION_SET, CACHE_FILE, DECODE_ACCENT_COST,
-                    DECODE_EDIT_COST, DECODE_OOV_COST)
+                    DECODE_EDIT_COST, DECODE_OOV_COST, SCORE_EDIT_WEIGHT,
+                    SCORE_CONFUSION_BONUS, SCORE_FREQ_WEIGHT, SCORE_LEFT_WEIGHT,
+                    SCORE_RIGHT_WEIGHT, SCORE_TONE_AWARE)
+from correction.ranking import weighted_edit_distance
 from evaluation.error_analysis import remove_accents
 from evaluation.baseline import NGramLanguageModel
 import math
@@ -17,6 +20,11 @@ class  ImproveSpellChecker:
         self.lm = lm_model
         self.confusion_dict = self.load_confusion_set(CONFUSION_SET)
         self.cache = {}
+        self.weights = {          # trọng số chấm điểm, có thể chỉnh lúc chạy (xem config.py)
+            "edit": SCORE_EDIT_WEIGHT, "confusion": SCORE_CONFUSION_BONUS,
+            "freq": SCORE_FREQ_WEIGHT, "left": SCORE_LEFT_WEIGHT,
+            "right": SCORE_RIGHT_WEIGHT, "tone_aware": SCORE_TONE_AWARE,
+        }
         self.accent_index = defaultdict(list)   # từ bỏ dấu -> các từ có dấu trong từ vựng
         for w in self.lm.vocab:
             if not w.startswith("<"):
@@ -202,16 +210,20 @@ class  ImproveSpellChecker:
             candidates[candidate] = dist
         for candidate in confusion_candidates:
             candidates.setdefault(candidate, levenshtein(word, candidate))
+        w = self.weights
         for candidate, dist in candidates.items():
+            if w["tone_aware"]:
+                dist = weighted_edit_distance(word, candidate)
             p1 = self.lm.get_bigram_prob(prev_word, candidate)
             p2 = self.lm.get_bigram_prob(candidate, next_word)
             score = (
-                math.log(p1)
-                + math.log(p2)
-                - (dist * 1.5)
+                w["left"] * math.log(p1)
+                + w["right"] * math.log(p2)
+                - w["edit"] * dist
+                + w["freq"] * math.log(self.lm.unigram_counts[candidate] + 1)
             )
             if candidate in confusion_candidates:
-                score += 0.5
+                score += w["confusion"]
             scored_candidates.append((candidate, score))
         scored_candidates.sort(key=lambda x: x[1], reverse=True)
         return scored_candidates
