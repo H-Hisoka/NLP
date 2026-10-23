@@ -1,7 +1,7 @@
 import re
 import unicodedata
 import pandas as pd
-from config import DATA_FILE, TRAIN_RATIO, SEED
+from config import DATA_FILE, TRAIN_RATIO, SEED, SPECIAL_PATTERNS
 
 
 def normalize_text(text: str) -> str:
@@ -93,3 +93,161 @@ def vni_candidates(token, vocab):
         else:
             return []
     return apply_tone("".join(letters), tone, vocab)
+# Nhận diện email, link, số điện thoại (không phải chữ cần sửa chính tả) 
+SPECIAL_REGEX = re.compile("|".join(f"(?P<{name}>{pattern})" for name, pattern in SPECIAL_PATTERNS.items()))
+def find_special_spans(text):
+    """Danh sách (bắt đầu, kết thúc, loại) của các đoạn email, url, số điện thoại, ngày, giờ, hashtag."""
+    return [(m.start(), m.end(), m.lastgroup) for m in SPECIAL_REGEX.finditer(text)]
+
+def mask_special_spans(text):
+    """Thay các đoạn đặc biệt (kể cả đoạn SAI định dạng) bằng '\x00' (độ dài giữ nguyên) để không bị tách thành từ."""
+    chars = list(text)
+    spans = [(s, e) for s, e, _ in find_special_spans(text)]
+    spans += [(item["start"], item["end"]) for item in find_invalid_format_spans(text)]
+    for start, end in spans:
+        chars[start:end] = "\x00" * (end - start)
+    return "".join(chars)
+
+
+# ---------- Phát hiện email / link / ngày / giờ SAI định dạng ----------
+import calendar
+import difflib
+from datetime import date as _date
+
+KNOWN_EMAIL_DOMAINS = ["gmail.com", "yahoo.com", "yahoo.com.vn", "outlook.com",
+                       "hotmail.com", "icloud.com", "live.com"]
+EMAIL_TYPO_CUTOFF = 0.85    # độ giống tối thiểu để coi 'gmial.com' là gõ sai của 'gmail.com'
+# Mẫu "lỏng" để bắt cả đoạn viết sai; sau đó kiểm tra bằng mẫu "chặt" (xem *_OK bên dưới)
+EMAIL_CANDIDATE = re.compile(r"[\w.+-]+@+[\w.-]*[\w-]")
+URL_CANDIDATE = re.compile(
+    r"\bhttps?[:/]+[^\s]+|\bwww[.,;:_-]?[\w-]+(?:\.[\w-]+)+(?:/[^\s]*)?", re.I)
+DATE_CANDIDATE = re.compile(r"(?<![\w/])(\d{1,2})([/-])(\d{1,2})\2(\d{4}|\d{2})(?![\w/])")
+TIME_CANDIDATE = re.compile(r"(?<![\w:])(\d{1,2})([:hH])(\d{2})(?![\w:])")
+EMAIL_OK = re.compile(r"^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$")
+URL_OK = re.compile(r"^https?://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?(?:[/?#]\S*)?$", re.I)
+WWW_OK = re.compile(r"^www\.[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?:[/?#]\S*)?$", re.I)
+
+
+def _strip_accents(text):
+    text = text.replace("đ", "d").replace("Đ", "D")
+    text = unicodedata.normalize("NFD", text)
+    return "".join(c for c in text if unicodedata.category(c) != "Mn")
+
+
+def _domain_typo(email):
+    """Email đúng cấu trúc nhưng tên miền giống (mà không trùng) một nhà cung cấp quen thuộc."""
+    domain = email.split("@")[-1].lower()
+    return domain not in KNOWN_EMAIL_DOMAINS and bool(
+        difflib.get_close_matches(domain, KNOWN_EMAIL_DOMAINS, n=1, cutoff=EMAIL_TYPO_CUTOFF))
+
+
+def _email_ok(email):
+    local = email.split("@")[0]
+    return bool(EMAIL_OK.match(email)) and ".." not in email and not local.startswith(".") and not local.endswith(".")
+
+
+def _fix_email(raw):
+    local, _, domain = re.sub(r"@+", "@", raw).partition("@")
+    local = re.sub(r"\.{2,}", ".", _strip_accents(local)).strip(".")
+    domain = re.sub(r"\.{2,}", ".", domain.lower()).strip(".-")
+    fixes = []
+
+    def add(d):
+        email = f"{local}@{d}"
+        if local and _email_ok(email) and email != raw and email not in fixes:
+            fixes.append(email)
+
+    if "." in domain:
+        add(domain)
+        if domain not in KNOWN_EMAIL_DOMAINS:       # có thể gõ sai tên miền: gmial.com, gmail.con...
+            for d in difflib.get_close_matches(domain, KNOWN_EMAIL_DOMAINS, n=2, cutoff=EMAIL_TYPO_CUTOFF):
+                add(d)
+    else:                                   # thiếu đuôi, ví dụ 'user@gmail'
+        known = difflib.get_close_matches(domain + ".com", KNOWN_EMAIL_DOMAINS, n=1, cutoff=EMAIL_TYPO_CUTOFF)
+        if known:
+            add(known[0])
+        else:
+            for tld in (".com", ".vn", ".edu.vn"):
+                add(domain + tld)
+    return fixes[:3]
+
+
+def _fix_url(raw):
+    fixes = []
+    m = re.match(r"(?i)^(https?)[:/]+(.*)$", raw)
+    if m:
+        scheme, rest = m.group(1).lower(), m.group(2)
+        fixed = f"{scheme}://{rest}"
+        if URL_OK.match(fixed):
+            fixes.append(fixed)
+        else:
+            host = re.split(r"[/?#]", rest, maxsplit=1)[0]
+            if host and "." not in host:    # thiếu đuôi miền
+                fixes += [f"{scheme}://{host}{tld}{rest[len(host):]}" for tld in (".com", ".vn")]
+    else:
+        m = re.match(r"(?i)^www[.,;:_-]?(.*)$", raw)
+        if m:
+            fixed = "www." + m.group(1)
+            if WWW_OK.match(fixed):
+                fixes.append(fixed)
+    return [f for f in dict.fromkeys(fixes) if f != raw][:3]
+
+
+def _fix_date(day, sep, month, year_text):
+    day, month = int(day), int(month)
+    year = int(year_text) + (2000 if len(year_text) == 2 else 0)
+    year = year if year >= 1 else 2000
+    fmt = lambda d, m: f"{d:02d}{sep}{m:02d}{sep}{year_text}"
+    fixes = []
+    if 1 <= month <= 12 and day >= 1:       # ngày vượt quá số ngày của tháng -> lấy ngày cuối tháng
+        fixes.append(fmt(min(day, calendar.monthrange(year, month)[1]), month))
+    try:                                    # có thể bị đảo ngày và tháng
+        _date(year, day, month)
+        fixes.append(fmt(month, day))
+    except ValueError:
+        pass
+    return list(dict.fromkeys(fixes))[:3]
+
+
+def _fix_time(hour, sep, minute):
+    hour, minute = int(hour), int(minute)
+    fixes = [f"{min(hour, 23)}{sep}{min(minute, 59):02d}"]
+    if minute > 59 and hour < 23 and minute - 60 <= 59:
+        fixes.append(f"{hour + 1}{sep}{minute - 60:02d}")
+    return list(dict.fromkeys(fixes))[:3]
+
+
+def find_invalid_format_spans(text):
+    """Các đoạn trông giống email / link / ngày / giờ nhưng viết SAI định dạng.
+    Mỗi mục: {start, end, kind, text, suggestions} (suggestions: tối đa 3 cách sửa)."""
+    found, url_spans = [], []
+    for m in URL_CANDIDATE.finditer(text):
+        s = m.group().rstrip(".,;:!?)\"'")
+        if not s:
+            continue
+        start, end = m.start(), m.start() + len(s)
+        url_spans.append((start, end))
+        valid = URL_OK.match(s) if s.lower().startswith("http") else WWW_OK.match(s)
+        if not valid:
+            found.append({"start": start, "end": end, "kind": "url", "text": s, "suggestions": _fix_url(s)})
+    for m in EMAIL_CANDIDATE.finditer(text):
+        start, end = m.span()
+        if any(a <= start and end <= b for a, b in url_spans):    # email nằm trong link thì bỏ qua
+            continue
+        if not _email_ok(m.group()) or _domain_typo(m.group()):
+            found.append({"start": start, "end": end, "kind": "email", "text": m.group(),
+                          "suggestions": _fix_email(m.group())})
+    for m in DATE_CANDIDATE.finditer(text):
+        day, sep, month, year_text = m.groups()
+        year = int(year_text) + (2000 if len(year_text) == 2 else 0)
+        try:
+            _date(max(year, 1), int(month), int(day))
+        except ValueError:
+            found.append({"start": m.start(), "end": m.end(), "kind": "date", "text": m.group(),
+                          "suggestions": _fix_date(day, sep, month, year_text)})
+    for m in TIME_CANDIDATE.finditer(text):
+        hour, sep, minute = m.groups()
+        if int(hour) > 23 or int(minute) > 59:
+            found.append({"start": m.start(), "end": m.end(), "kind": "time", "text": m.group(),
+                          "suggestions": _fix_time(hour, sep, minute)})
+    return sorted(found, key=lambda item: item["start"])
