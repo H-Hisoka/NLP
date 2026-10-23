@@ -109,7 +109,7 @@ def mask_special_spans(text):
     return "".join(chars)
 
 
-# Phát hiện email / link / ngày / giờ SAI định dạng
+# Phát hiện email / ngày / giờ SAI định dạng
 import calendar
 import difflib
 from datetime import date as _date
