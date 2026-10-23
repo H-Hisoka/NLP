@@ -88,3 +88,12 @@ THRESHOLD_VALUES = [2.0, 5.0, 8.0, 12.0, 16.0]
 DECODE_ACCENT_COST = 1.0   # chi phí khôi phục dấu (bỏ dấu thì ra đúng từ đang xét)
 DECODE_EDIT_COST = 4.0     # chi phí mỗi thao tác sửa ký tự khác
 DECODE_OOV_COST = 4.0      # phạt khi giữ nguyên một từ không có trong từ vựng
+# Các đoạn đặc biệt cần bỏ qua khi kiểm tra chính tả (tên -> regex).
+SPECIAL_PATTERNS = {
+    "email": r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+",
+    "url": r"(?:https?://|www\.)[^\s]+",
+    "phone": r"(?<![\w.])(?:(?:\+84|84|0)[\s.-]?\(?\d{1,3}\)?|\(0\d{1,3}\))(?:[\s.-]?\d{2,4}){2,3}(?!\w)",
+    "date": r"(?<![\w/])(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}/\d{1,2})(?![\w/])",
+    "time": r"(?<![\w:])\d{1,2}(?:[:hH]\d{2}|[hH])(?![\w:])",
+    "social": r"(?<!\w)[#@]\w+",
+}

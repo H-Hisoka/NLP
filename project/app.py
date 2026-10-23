@@ -1,12 +1,3 @@
-"""
-app.py - Ứng dụng sửa lỗi chính tả tiếng Việt (giao diện Tkinter)
-
-Chạy: mở terminal tại thư mục project/ rồi gõ  python app.py
-
-Cách dùng: nhập hoặc tải lên đoạn văn -> "Kiểm tra chính tả" -> xem các từ nghi sai
-được tô vàng -> với mỗi từ chọn 1 trong 3 phương án để chấp nhận (hoặc "Giữ nguyên"
-để từ chối) -> đoạn văn sau khi sửa hiện ở ô cuối.
-"""
 import os
 import re
 import sys
@@ -17,8 +8,7 @@ import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
-
-from data.preprocessing import normalize_text
+from data.preprocessing import normalize_text, mask_special_spans, find_invalid_format_spans
 from models.train_language_model import NGramLanguageModel
 from models.improved_model import ImproveSpellChecker
 from correction.candidate_generation import generate_candidates_fast
@@ -28,6 +18,8 @@ REAL_WORD_THRESHOLD = 8.0
 NUM_CANDIDATES = 3
 SENTENCE_DELIMITERS = ".!?;\n"
 FONT = ("Segoe UI", 11)
+MANUAL = -1                     # giá trị lựa chọn "Nhập lại" (0 = giữ nguyên, 1..3 = phương án gợi ý)
+FORMAT_LABELS = {"email": "email", "url": "liên kết", "date": "ngày", "time": "giờ"}
 
 
 #  Phần xử lý (không liên quan giao diện)
@@ -43,8 +35,9 @@ def load_model():
 def split_sentences(text):
     """Tách đoạn văn thành các câu. Mỗi câu là danh sách (bắt đầu, kết thúc, từ)."""
     sentences, current_sentence, last_position = [], [], 0
-    for m in re.finditer(r"[^\W_]+", text):
-        gap = text[last_position:m.start()]
+    masked = mask_special_spans(text)      # email, link, số điện thoại... không bị tách thành từ
+    for m in re.finditer(r"[^\W_]+", masked):
+        gap = masked[last_position:m.start()]
         if current_sentence and any(c in SENTENCE_DELIMITERS for c in gap):
             sentences.append(current_sentence)
             current_sentence = []
@@ -113,15 +106,37 @@ def analyze_text(checker, text):
                 "tu": word,
                 "phuong_an": [match_case(word, c) for c in candidate_list],
             })
+    results.extend(analyze_formats(text))          # email / link / ngày / giờ sai định dạng
+    results.sort(key=lambda item: item["bat_dau"])
     return results
 
 
-def apply_corrections(text, results, choices):
-    """choices[i] = 0: giữ nguyên (từ chối); 1..3: chấp nhận phương án thứ n."""
+def analyze_formats(text):
+    """Các đoạn email, link, ngày, giờ viết sai định dạng (cùng cấu trúc với kết quả của analyze_text).
+    Có thêm khóa 'loai'; phuong_an có thể rỗng nếu không đoán được cách sửa (người dùng tự nhập lại)."""
+    return [{
+        "bat_dau": item["start"],
+        "ket_thuc": item["end"],
+        "tu": item["text"],
+        "phuong_an": item["suggestions"],
+        "loai": item["kind"],
+    } for item in find_invalid_format_spans(text)]
+
+
+def replacement_for(item, choice, manual_text=""):
+    """Nội dung thay cho một vị trí nghi sai: 0 = giữ nguyên, 1..3 = phương án, MANUAL = người dùng tự nhập."""
+    if choice == MANUAL:
+        return manual_text.strip() or item["tu"]
+    return item["phuong_an"][choice - 1] if choice else item["tu"]
+
+
+def apply_corrections(text, results, choices, manual_texts=None):
+    """choices[i] = 0: giữ nguyên (từ chối); 1..3: chấp nhận phương án thứ n; MANUAL: dùng chuỗi người dùng nhập."""
+    manual_texts = manual_texts or [""] * len(results)
     segments, end = [], 0
-    for item, choice in zip(results, choices):
+    for item, choice, manual_text in zip(results, choices, manual_texts):
         segments.append(text[end:item["bat_dau"]])
-        segments.append(item["phuong_an"][choice - 1] if choice else item["tu"])
+        segments.append(replacement_for(item, choice, manual_text))
         end = item["ket_thuc"]
     segments.append(text[end:])
     return "".join(segments)
@@ -135,6 +150,7 @@ class SpellCheckerApp:
         self.text = ""
         self.results = []
         self.selection_vars = []
+        self.manual_vars = []
 
         root.title("Sửa lỗi chính tả tiếng Việt")
         root.geometry("1150x720")
@@ -226,7 +242,7 @@ class SpellCheckerApp:
 
     def clear_text(self):
         self.input_text.delete("1.0", "end")
-        self.text, self.results, self.selection_vars = "", [], []
+        self.text, self.results, self.selection_vars, self.manual_vars = "", [], [], []
         for w in self.candidate_frame.winfo_children():
             w.destroy()
         self.set_text(self.highlight_text, "")
@@ -248,37 +264,55 @@ class SpellCheckerApp:
     def build_candidate_list(self):
         for w in self.candidate_frame.winfo_children():
             w.destroy()
-        self.selection_vars = []
+        self.selection_vars, self.manual_vars = [], []
         for item in self.results:
             variable = tk.IntVar(value=0)
+            manual = tk.StringVar(value=item["tu"])
             self.selection_vars.append(variable)
-            frame = ttk.LabelFrame(self.candidate_frame, text=f"“{item['tu']}”")
+            self.manual_vars.append(manual)
+            title = f"“{item['tu']}”"
+            if item.get("loai"):
+                title += f" – {FORMAT_LABELS[item['loai']]} sai định dạng"
+            frame = ttk.LabelFrame(self.candidate_frame, text=title)
             frame.pack(fill="x", padx=4, pady=3)
             ttk.Radiobutton(frame, text="Giữ nguyên (từ chối)", variable=variable,
                             value=0, command=self.update_display).pack(anchor="w")
             for n, cand in enumerate(item["phuong_an"], start=1):
                 ttk.Radiobutton(frame, text=f"{n}. {cand}", variable=variable,
                                 value=n, command=self.update_display).pack(anchor="w")
+            if item.get("loai"):                      # lỗi định dạng: cho người dùng tự nhập lại
+                row = ttk.Frame(frame)
+                row.pack(fill="x")
+                ttk.Radiobutton(row, text="Nhập lại:", variable=variable, value=MANUAL,
+                                command=self.update_display).pack(side="left")
+                ttk.Entry(row, textvariable=manual, width=34).pack(side="left", padx=4)
+                manual.trace_add("write", lambda *_, v=variable: (v.set(MANUAL), self.update_display()))
 
     def update_display(self):
         selections = [b.get() for b in self.selection_vars]
-        for item, choice in zip(self.results, selections):
+        manual_texts = [m.get() for m in self.manual_vars]
+        accepted_count = 0
+        for item, choice, manual_text in zip(self.results, selections, manual_texts):
             first = f"1.0+{item['bat_dau']}c"
             last_end = f"1.0+{item['ket_thuc']}c"
+            fixed = replacement_for(item, choice, manual_text) != item["tu"]
+            accepted_count += fixed
             self.highlight_text.tag_remove("nghi", first, last_end)
             self.highlight_text.tag_remove("da_sua", first, last_end)
-            self.highlight_text.tag_add("da_sua" if choice else "nghi", first, last_end)
-        self.set_text(self.output_text, apply_corrections(self.text, self.results, selections))
+            self.highlight_text.tag_add("da_sua" if fixed else "nghi", first, last_end)
+        self.set_text(self.output_text,
+                      apply_corrections(self.text, self.results, selections, manual_texts))
         if self.results:
-            accepted_count = sum(1 for c in selections if c)
+            format_count = sum(1 for item in self.results if item.get("loai"))
             self.update_status(
-                f"Tìm thấy {len(self.results)} từ nghi sai, đã chấp nhận {accepted_count}.")
+                f"Tìm thấy {len(self.results)} vị trí nghi sai (trong đó {format_count} lỗi định dạng), "
+                f"đã sửa {accepted_count}.")
         else:
             self.update_status("Không phát hiện từ nghi sai.")
 
     def accept_all(self):
-        for b in self.selection_vars:
-            b.set(1)
+        for item, b in zip(self.results, self.selection_vars):
+            b.set(1 if item["phuong_an"] else 0)      # lỗi định dạng không có gợi ý thì giữ nguyên
         self.update_display()
 
     def reject_all(self):
@@ -295,8 +329,9 @@ class SpellCheckerApp:
         if not file_path:
             return
         selections = [b.get() for b in self.selection_vars]
+        manual_texts = [m.get() for m in self.manual_vars]
         with open(file_path, "w", encoding="utf-8") as f:
-            f.write(apply_corrections(self.text, self.results, selections))
+            f.write(apply_corrections(self.text, self.results, selections, manual_texts))
         self.update_status(f"Đã lưu: {file_path}")
 
 
