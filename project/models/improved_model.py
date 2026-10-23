@@ -10,7 +10,7 @@ from evaluation.error_analysis import remove_accents
 from evaluation.baseline import NGramLanguageModel
 import math
 from correction.candidate_generation import generate_candidates_fast
-from correction.error_detection import levenshtein
+from correction.ranking import weighted_edit_distance
 
 class  ImproveSpellChecker:
     def __init__(self, lm_model: NGramLanguageModel):
@@ -199,9 +199,11 @@ class  ImproveSpellChecker:
         scored_candidates=[]
         candidates = {}
         for candidate, dist, freq in distance_candidates:
-            candidates[candidate] = dist
+            candidates[candidate] = weighted_edit_distance(word, candidate)
+
         for candidate in confusion_candidates:
-            candidates.setdefault(candidate, levenshtein(word, candidate))
+            candidates.setdefault(candidate, weighted_edit_distance(word, candidate))
+            
         for candidate, dist in candidates.items():
             p1 = self.lm.get_bigram_prob(prev_word, candidate)
             p2 = self.lm.get_bigram_prob(candidate, next_word)
