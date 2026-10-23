@@ -4,6 +4,7 @@ from data.preprocessing import tokenize
 from correction.candidate_generation import generate_candidates
 from config import TONE_CONFUSIONS
 
+SWAP_COST = 0.5        # đảo hai ký tự liền nhau
 #kt đầu vào là ký tự
 def checkToken(a,b):
     if a==b:
