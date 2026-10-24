@@ -95,6 +95,7 @@ Thực hiện phân tích tối thiểu 30 trường hợp lỗi của mô hình
 - Từ chuyên ngành.
 - Lỗi Real-word (từ viết đúng về mặt hình thức nhưng không phù hợp với ngữ cảnh).
 - Mô hình sửa nhầm từ vốn đã đúng.
+- Từ lỗi định dạng Vni/Telex
 - Sửa các lỗi định dạng Regrex (email, ngày, tháng, năm,....)
 
 Mục tiêu là xác định nguyên nhân gây lỗi, đánh giá hạn chế của hệ thống và đề xuất hướng cải thiện.
@@ -108,4 +109,7 @@ Mục tiêu là xác định nguyên nhân gây lỗi, đánh giá hạn chế c
 | 3 | Lộc | Lập trình, soạn thảo báo cáo Word | 100% |
 | 4 | An | Thiết kế slide thuyết trình | 100% |
 | 5 | Lâm | Soạn thảo báo cáo Word | 100% |
+
+## 8. Link video demo
+Link: 
 
