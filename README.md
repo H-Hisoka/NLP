@@ -2,7 +2,9 @@
 #Đề tài 1: Hệ thống phát hiện và sửa lỗi chính tả tiếng Việt
 
 1. Giới thiệu:
+
 -Xây dựng hệ thống phát hiện và sửa các lỗi chính tả phổ biến trong văn bản tiếng Việt, bao gồm:
+
 Thiếu hoặc sai dấu thanh.
 Nhầm ký tự.
 Thừa hoặc thiếu ký tự.
