@@ -2,11 +2,8 @@ from correction.error_detection import levenshtein
 import math
 from data.preprocessing import tokenize
 from correction.candidate_generation import generate_candidates
-from config import TONE_CONFUSIONS, CONFUSION_SET
-import json
+from config import TONE_CONFUSIONS
 
-with open(CONFUSION_SET, "r", encoding="utf-8") as f:
-    confusion_set = json.load(f)
 SWAP_COST = 0.5        # đảo hai ký tự liền nhau
 #kt đầu vào là ký tự
 def checkToken(a,b):
@@ -14,15 +11,8 @@ def checkToken(a,b):
         return 0
     if (a,b) in TONE_CONFUSIONS:
         return 0.5
-    confused = (
-        b in confusion_set.get(a, [])
-        or a in confusion_set.get(b, [])
-    )
-    if confused:
-        return 0.5
 
-    else:
-        return 1
+    return 1
 
 def weighted_edit_distance(a,b,return_matrix=False):
     n,m=len(a), len(b)
