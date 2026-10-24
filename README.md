@@ -12,6 +12,7 @@ Xây dựng hệ thống phát hiện và sửa các lỗi chính tả phổ bi�
 - Đảo vị trí các ký tự liền nhau.
 - Nhầm phụ âm đầu hoặc vần.
 - Viết sai do sử dụng kiểu gõ Telex hoặc VNI.
+- Sai định dạng email, ngày, tháng, năm, ....
 
 ## 2. Tính năng
 
@@ -21,8 +22,8 @@ Xây dựng hệ thống phát hiện và sửa các lỗi chính tả phổ bi�
 - Phát hiện và đánh dấu các vị trí nghi ngờ có lỗi chính tả.
 - Đề xuất tối thiểu ba phương án sửa lỗi cho mỗi vị trí phù hợp.
 - Cho phép người dùng chấp nhận hoặc từ chối từng phương án sửa lỗi.
+- Hỗ trợ xử lý các định dạng đặc biệt như email, ngày, tháng và năm,.... cho phép người dùng chấp nhận gợi ý hoặc tự nhập nội dung chính xác.
 - Hiển thị văn bản sau khi hoàn tất chỉnh sửa.
-- Hỗ trợ xử lý các định dạng đặc biệt như email, ngày, tháng và năm, cho phép người dùng chấp nhận gợi ý hoặc tự nhập nội dung chính xác.
 
 ## 3. Cài đặt
 
@@ -94,6 +95,7 @@ Thực hiện phân tích tối thiểu 30 trường hợp lỗi của mô hình
 - Từ chuyên ngành.
 - Lỗi Real-word (từ viết đúng về mặt hình thức nhưng không phù hợp với ngữ cảnh).
 - Mô hình sửa nhầm từ vốn đã đúng.
+- Sửa các lỗi định dạng Regrex (email, ngày, tháng, năm,....)
 
 Mục tiêu là xác định nguyên nhân gây lỗi, đánh giá hạn chế của hệ thống và đề xuất hướng cải thiện.
 
