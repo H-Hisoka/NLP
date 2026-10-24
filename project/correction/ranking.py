@@ -2,15 +2,25 @@ from correction.error_detection import levenshtein
 import math
 from data.preprocessing import tokenize
 from correction.candidate_generation import generate_candidates
-from config import TONE_CONFUSIONS
+from config import TONE_CONFUSIONS, CONFUSION_SET
+import json
 
+with open(CONFUSION_SET, "r", encoding="utf-8") as f:
+    confusion_set = json.load(f)
 SWAP_COST = 0.5        # đảo hai ký tự liền nhau
 #kt đầu vào là ký tự
 def checkToken(a,b):
     if a==b:
         return 0
-    elif (a,b) in TONE_CONFUSIONS:
+    if (a,b) in TONE_CONFUSIONS:
         return 0.5
+    confused = (
+        b in confusion_set.get(a, [])
+        or a in confusion_set.get(b, [])
+    )
+    if confused:
+        return 0.5
+
     else:
         return 1
 
@@ -29,6 +39,15 @@ def weighted_edit_distance(a,b,return_matrix=False):
                 dp[i][j - 1] + 1,        # insert
                 dp[i - 1][j - 1] + cost  # substitute / match
             )
+            if (
+                i >= 2 and j >= 2
+                and a[i - 1] == b[j - 2]
+                and a[i - 2] == b[j - 1]
+            ):
+                dp[i][j] = min(
+                    dp[i][j],
+                    dp[i - 2][j - 2] + SWAP_COST
+                )
 
     return (dp[n][m], dp) if return_matrix else dp[n][m]
 
