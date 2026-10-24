@@ -23,7 +23,7 @@ DATA_FILE = os.path.join(BASE_DIR, "dataset.csv")      # cột: stt, wrong, righ
 CACHE_FILE = os.path.join(BASE_DIR, "candidate_cache.pkl") 
 TRAIN_RATIO = 0.8
 SEED = 42
-TEST_SAMPLE_SIZE = 1500      
+TEST_SAMPLE_SIZE = None      
 REAL_WORD_THRESHOLD = 8.0      
 THRESHOLD_VALUES = [2.0, 5.0, 8.0, 12.0, 16.0]
 
