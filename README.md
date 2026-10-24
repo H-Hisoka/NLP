@@ -12,14 +12,14 @@ Xây dựng hệ thống phát hiện và sửa các lỗi chính tả phổ bi�
 - Đảo vị trí các ký tự liền nhau.
 - Nhầm phụ âm đầu hoặc vần.
 - Viết sai do sử dụng kiểu gõ Telex hoặc VNI.
-- Sai định dạng email, ngày, tháng, năm, ....
+- Sai định dạng email, ngày, tháng, năm, .... (dùng Re)
 
 ## 2. Tính năng
 
 Ứng dụng cung cấp các chức năng sau:
 
 - Nhập văn bản trực tiếp hoặc tải lên văn bản cần kiểm tra.
-- Phát hiện và đánh dấu các vị trí nghi ngờ có lỗi chính tả.
+- Phát hiện và tô màu các vị trí nghi ngờ có lỗi chính tả.
 - Đề xuất tối thiểu ba phương án sửa lỗi cho mỗi vị trí phù hợp.
 - Cho phép người dùng chấp nhận hoặc từ chối từng phương án sửa lỗi.
 - Hỗ trợ xử lý các định dạng đặc biệt như email, ngày, tháng và năm,.... cho phép người dùng chấp nhận gợi ý hoặc tự nhập nội dung chính xác.
@@ -54,7 +54,7 @@ Kích hoạt môi trường ảo trên Windows:
 ### Bước 3: Cài đặt thư viện
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install pandas
 ```
 
 ### Bước 4: Khởi chạy chương trình
