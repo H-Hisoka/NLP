@@ -111,5 +111,5 @@ Mục tiêu là xác định nguyên nhân gây lỗi, đánh giá hạn chế c
 | 5 | Lâm | Soạn thảo báo cáo Word | 100% |
 
 ## 8. Link video demo
-Link: 
+Link: https://drive.google.com/file/d/1cTxadY1iMZKP_BFxJHlEOcucT-1lhPcM/view?usp=sharing
 
