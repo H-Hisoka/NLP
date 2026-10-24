@@ -1,5 +1,6 @@
 from correction.error_detection import levenshtein
 
+# Xếp hạng ứng viên
 def generate_candidates(observed,
                         vocabulary,
                         freq,
@@ -14,6 +15,7 @@ def generate_candidates(observed,
     scored.sort(key=lambda x: (x[1], -x[2], x[0]))
     return scored[:top_n]
 
+# Xếp hạng ứng viên nhanh hơn
 def generate_candidates_fast(observed, vocabulary, freq,
                              max_distance=2, top_n=20):
     scored = []

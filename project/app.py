@@ -22,7 +22,7 @@ MANUAL = -1                     # giá trị lựa chọn "Nhập lại" (0 = gi
 FORMAT_LABELS = {"email": "email", "url": "liên kết", "date": "ngày", "time": "giờ"}
 
 
-#  Phần xử lý (không liên quan giao diện)
+#  Load model
 def load_model():
     """Huấn luyện bigram trên cột 'right' của dataset.csv, trả về ImproveSpellChecker."""
     df = pd.read_csv(DATA_FILE, encoding="utf-8-sig").dropna(subset=["right"])
