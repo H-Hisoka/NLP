@@ -4,7 +4,9 @@ from data.preprocessing import tokenize
 from correction.candidate_generation import generate_candidates
 from config import TONE_CONFUSIONS
 
-SWAP_COST = 0.5        # đảo hai ký tự liền nhau
+#Chi phí đảo 2 ký tự 
+SWAP_COST = 0.5   
+
 #kt đầu vào là ký tự
 def checkToken(a,b):
     if a==b:
@@ -29,6 +31,7 @@ def weighted_edit_distance(a,b,return_matrix=False):
                 dp[i][j - 1] + 1,        # insert
                 dp[i - 1][j - 1] + cost  # substitute / match
             )
+            #Swap
             if (
                 i >= 2 and j >= 2
                 and a[i - 1] == b[j - 2]
@@ -45,6 +48,7 @@ def error_logprob(observed, candidate, alpha=1.7):
     d = weighted_edit_distance(candidate, observed)
     return -alpha * d
 
+#Chấm điểm ứng viên
 def candidate_score(observed,
                     candidate,
                     prev_word,

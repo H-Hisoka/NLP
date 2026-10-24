@@ -15,7 +15,6 @@ def normalize_text(text: str) -> str:
 def tokenize(text: str):
     return normalize_text(text).split()
 
-# Dữ liệu 
 def load_data(file_path=DATA_FILE):
     df = pd.read_csv(file_path, encoding="utf-8-sig")
     df = df.dropna(subset=["wrong", "right"]).copy()
@@ -28,6 +27,7 @@ def split_train_test(df, ratio=TRAIN_RATIO, seed=SEED):
     df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
     split_index = int(len(df) * ratio)
     return df.iloc[:split_index], df.iloc[split_index:]
+
 # Lỗi gõ Telex / VNI
 TELEX_TONES = {"s": "\u0301", "f": "\u0300", "r": "\u0309", "x": "\u0303", "j": "\u0323"}
 VNI_TONES = {"1": "\u0301", "2": "\u0300", "3": "\u0309", "4": "\u0303", "5": "\u0323"}
@@ -93,6 +93,7 @@ def vni_candidates(token, vocab):
         else:
             return []
     return apply_tone("".join(letters), tone, vocab)
+
 # Nhận diện email, link, số điện thoại (không phải chữ cần sửa chính tả) 
 SPECIAL_REGEX = re.compile("|".join(f"(?P<{name}>{pattern})" for name, pattern in SPECIAL_PATTERNS.items()))
 def find_special_spans(text):

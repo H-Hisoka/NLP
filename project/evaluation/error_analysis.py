@@ -27,10 +27,12 @@ def remove_accents(text):
    text = text.replace("đ", "d").replace("Đ", "D")
    text = unicodedata.normalize("NFD", text)
    return "".join(c for c in text if unicodedata.category(c) != "Mn")
+
 def get_edit_operations(original_word, correct_word):
       """Các thao tác (khác MATCH) để biến từ nhập vào thành đáp án."""
       _, ops = damerau_levenshtein_trace(original_word, correct_word)
       return [op for op in ops if op[0] != "MATCH"]
+
 def log_error_analysis(original_word, predicted_word, correct_word, category):
    """Ghi nhận lỗi của mô hình phục vụ báo cáo đồ án"""
    if category in error_categories:
@@ -39,6 +41,7 @@ def log_error_analysis(original_word, predicted_word, correct_word, category):
            "Predict": predicted_word,
            "Target": correct_word
        })
+
 def classify_word(original_word, predicted_word, correct_word, vocab):
       if original_word == correct_word:
           return "Sửa nhầm từ vốn đã đúng"
@@ -55,6 +58,7 @@ def classify_word(original_word, predicted_word, correct_word, vocab):
       if correct_word not in vocab:
           return "Từ riêng"
       return "Sai ký tự"
+
 def classify_character_error(original_word, correct_word):
    """Chia nhỏ nhóm 'Sai ký tự' dựa vào các thao tác của trace."""
    edit_operations = get_edit_operations(original_word, correct_word)
@@ -80,12 +84,12 @@ def log_sub_error(original_word, predicted_word, correct_word, subcategory):
        })
 
 def print_sub_error_statistics():
-   print("--- CHIA NHỎ NHÓM [Sai ký tự] ---")
+   print("Chia nhỏ nhóm (Sai ký tự)")
    for subcategory, logs in character_error_subcategories.items():
        print(f"  - {subcategory}: {len(logs)} mẫu")
 
 def print_error_statistics():
-   print("--- THỐNG KÊ BẢNG PHÂN TÍCH LỖI CHO BÁO CÁO ---")
+   print("Bảng thống kê phân tích lỗi cho báo cáo")
    for cat, logs in error_categories.items():
        print(f"* Nhóm [{cat}]: {len(logs)} mẫu lỗi")
 
@@ -111,13 +115,13 @@ def analyze_errors(lm, checker, test_df, threshold, num_samples_to_print=30):
     print_error_statistics()
     print()
     print_sub_error_statistics()
-    print(f"\n--- {num_samples_to_print} LỖI MẪU (input -> dự đoán | đáp án | nhóm) ---")
+    print(f"\n{num_samples_to_print} LỖI MẪU (input -> dự đoán | đáp án | nhóm)")
     for ww, pw, gw, category in errors_found[:num_samples_to_print]:
         print(f"{ww} -> {pw} | {gw} | {category}")
 
 
 def show_sample_predictions(lm, checker, sentences, threshold):
-    print("\n=== THỬ CÂU MẪU ===")
+    print("\nTHỬ CÂU MẪU ")
     for sentence in sentences:
         c = normalize_text(sentence)
         tokens = c.split()

@@ -8,7 +8,6 @@ from evaluation.baseline import BaselineSpellChecker
 from evaluation.evaluation import evaluate_baseline, evaluate_improved
 from evaluation.error_analysis import analyze_errors, show_sample_predictions
 
-# Để in tiếng Việt được cả khi chạy bằng nút Run /Code Runner trên Windows
 sys.stdout.reconfigure(encoding="utf-8")
 
 
