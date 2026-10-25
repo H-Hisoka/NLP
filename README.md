@@ -107,8 +107,8 @@ Mục tiêu là xác định nguyên nhân gây lỗi, đánh giá hạn chế c
 | 1 | Khang | Lập trình, soạn thảo báo cáo Word | 100% |
 | 2 | Hải | Lập trình, soạn thảo báo cáo Word | 100% |
 | 3 | Lộc | Lập trình, soạn thảo báo cáo Word | 100% |
-| 4 | An | Thiết kế slide thuyết trình | 100% |
-| 5 | Lâm | Soạn thảo báo cáo Word | 100% |
+| 4 | An | Thiết kế slide thuyết trình, Soạn script | 100% |
+| 5 | Lâm | Soạn thảo báo cáo Word, Thiết kế slide thuyết trình | 100% |
 
 ## 8. Link video demo
 Link: https://drive.google.com/file/d/1cTxadY1iMZKP_BFxJHlEOcucT-1lhPcM/view?usp=sharing
