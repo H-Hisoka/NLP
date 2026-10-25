@@ -42,12 +42,50 @@ def log_error_analysis(original_word, predicted_word, correct_word, category):
            "Target": correct_word
        })
 
+
+def is_segmentation_error(original_word, correct_word):
+    if len(original_word.split()) == len(correct_word.split()):
+        return False
+    a = remove_accents(original_word.replace(" ", "")).lower()
+    b = remove_accents(correct_word.replace(" ", "")).lower()
+    return a == b
+
+def find_segmentation_errors(wrong_words, right_words, max_group=4):
+      """Ghép từ câu sai với câu đúng theo chuỗi ký tự (bỏ dấu, bỏ cách).
+      Trả về list (cụm_sai, cụm_đúng) tại các chỗ dính/tách từ."""
+      results = []
+      i = j = 0
+      while i < len(wrong_words) and j < len(right_words):
+          if wrong_words[i] == right_words[j]:
+              i += 1; j += 1
+              continue
+          matched = False
+          for total in range(3, 2 * max_group + 1):
+              for di in range(1, max_group + 1):
+                  dj = total - di
+                  if dj < 1 or dj > max_group or (di == 1 and dj == 1):
+                      continue
+                  w_grp, r_grp = wrong_words[i:i + di], right_words[j:j + dj]
+                  if len(w_grp) < di or len(r_grp) < dj:
+                      continue
+                  w_txt, r_txt = " ".join(w_grp), " ".join(r_grp)
+                  if is_segmentation_error(w_txt, r_txt):
+                      results.append((w_txt, r_txt))
+                      i += di; j += dj
+                      matched = True
+                      break
+              if matched:
+                  break
+          if not matched:
+              i += 1; j += 1
+      return results
+
 def classify_word(original_word, predicted_word, correct_word, vocab):
       if original_word == correct_word:
           return "Sửa nhầm từ vốn đã đúng"
       if original_word in vocab:
           return "Real-word error"
-      if original_word.replace(" ", "") == correct_word.replace(" ", ""):
+      if is_segmentation_error(original_word, correct_word):
           return "Lỗi tách từ"
       edit_operations = get_edit_operations(original_word, correct_word)
       if edit_operations and all(
@@ -101,7 +139,15 @@ def analyze_errors(lm, checker, test_df, threshold, num_samples_to_print=30):
         pred = checker.correct_sentence(wrong, threshold)
         w, g, p = wrong.split(), right.split(), pred.split()
         if not (len(w) == len(g) == len(p)):
-            continue
+            if len(w) != len(g):
+                pred_text = " ".join(p)
+                for wrong_chunk, right_chunk in find_segmentation_errors(w, g):
+                    if right_chunk not in pred_text:   # model chưa sửa đúng
+                        log_error_analysis(wrong_chunk, pred_text, right_chunk, "Lỗi tách từ")
+                        errors_found.append((wrong_chunk, pred_text, right_chunk, "Lỗi tách từ"))
+                continue
+            if len(w) != len(p):
+                continue
         for ww, gw, pw in zip(w, g, p):
             if pw != gw:
                 category = classify_word(ww, pw, gw, lm.vocab)
