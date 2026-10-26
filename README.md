@@ -100,16 +100,6 @@ Thực hiện phân tích tối thiểu 30 trường hợp lỗi của mô hình
 
 Mục tiêu là xác định nguyên nhân gây lỗi, đánh giá hạn chế của hệ thống và đề xuất hướng cải thiện.
 
-## 7. Thành viên
-
-| STT | Thành viên | Công việc phụ trách | Tiến độ |
-|:---:|---|---|---|
-| 1 | Khang | Lập trình, soạn thảo báo cáo Word | 100% |
-| 2 | Hải | Lập trình, soạn thảo báo cáo Word | 100% |
-| 3 | Lộc | Lập trình, soạn thảo báo cáo Word | 100% |
-| 4 | An | Thiết kế slide thuyết trình, Soạn script | 100% |
-| 5 | Tân | Soạn thảo báo cáo Word | 50% |
-
-## 8. Link video demo
+## 7. Link video demo
 Link: https://drive.google.com/file/d/1cTxadY1iMZKP_BFxJHlEOcucT-1lhPcM/view?usp=sharing
 
